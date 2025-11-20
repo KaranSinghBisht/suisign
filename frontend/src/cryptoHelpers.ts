@@ -1,4 +1,5 @@
 // /frontend/src/cryptoHelpers.ts
+import { saveEncryptedBlob } from "./storage";
 // Utility: convert ArrayBuffer to hex
 export function toHex(buffer: ArrayBuffer): string {
 	const bytes = new Uint8Array(buffer);
@@ -95,4 +96,45 @@ export async function decryptDocument(
 	);
 
 	return plaintext;
+}
+
+export type EncryptedWalrusDoc = {
+	blobId: string;
+	hashHex: string;
+	ivB64: string;
+	keyB64: string;
+};
+
+export async function encryptMessageAndUploadToWalrus(opts: {
+	subject: string;
+	message: string;
+	senderAddress: string;
+}): Promise<EncryptedWalrusDoc> {
+	const payload = {
+		v: 1,
+		kind: 'text_message',
+		subject: opts.subject,
+		message: opts.message,
+		sender: opts.senderAddress,
+		createdAt: new Date().toISOString(),
+	};
+
+	const encoder = new TextEncoder();
+	const payloadBytes = encoder.encode(JSON.stringify(payload));
+	const { cipherBytes, keyB64, ivB64 } = await encryptDocument(payloadBytes.buffer);
+	const hashHex = await sha256(payloadBytes.buffer);
+
+	const blobId = await saveEncryptedBlob(
+		cipherBytes,
+		ivB64,
+		'application/json',
+		`suisign-message-${Date.now()}.json`,
+	);
+
+	return {
+		blobId,
+		hashHex,
+		ivB64,
+		keyB64,
+	};
 }

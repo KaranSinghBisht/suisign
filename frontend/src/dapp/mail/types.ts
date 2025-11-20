@@ -14,6 +14,9 @@ export interface UiDocument {
   contentBody?: string; // full mock body
   walrusBlobId?: string; // Walrus blob id
   tags?: string[];
+  signedByLabels?: string[];
+  signedAddresses?: string[];
+  signerAddresses?: string[];
 }
 
 export enum FolderType {

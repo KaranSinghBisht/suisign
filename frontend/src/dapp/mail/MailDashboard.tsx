@@ -1,4 +1,5 @@
 // /frontend/src/dapp/mail/MailDashboard.tsx
+
 import React, { useState, useEffect } from "react";
 import { useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { Sidebar } from "./Sidebar";
@@ -10,40 +11,136 @@ import {
   loadDocsForAddress,
   saveDocForAddress,
   type StoredDocMetadata,
+  updateDocStatusForAddress,
+  updateDocSignedAddressesForAddress,
+  type StoredDocStatus,
 } from "../../storage";
 import { getHandleForAddress } from "../../handleRegistry";
 import { ComposePanel } from "./ComposePanel";
 import { createDocumentFromCompose } from "./createFromCompose";
 import { signDocumentOnChain } from "./signDocument";
+import { fetchDocumentFromChain } from "../../chain/documentQueries";
 
 interface MailDashboardProps {
   currentAddress?: string | null;
 }
 
+/* ---------- helpers ---------- */
+
+function formatAddressLabel(addr: string): string {
+  if (!addr) return "";
+  const handle = getHandleForAddress(addr);
+  if (handle && handle.length > 0) {
+    // handles already come without ".sui"
+    return `${handle}.sui`;
+  }
+  if (addr.startsWith("0x") && addr.length > 10) {
+    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  }
+  return addr;
+}
+
+function buildSignedByLabels(addrs: string[] | undefined | null): string[] {
+  if (!addrs || !addrs.length) return [];
+  const labels: string[] = [];
+  for (const raw of addrs) {
+    if (!raw) continue;
+    const label = formatAddressLabel(raw);
+    if (label && label.trim().length > 0) {
+      labels.push(label);
+    }
+  }
+  return Array.from(new Set(labels));
+}
+
+/**
+ * If a document is completed and we *know* the full signer list,
+ * force signedAddresses to be "all signers", even if the local
+ * list is partial / empty.
+ */
+function deriveEffectiveSignedAddresses(
+  status: StoredDocStatus | undefined,
+  storedSigned: string[] | undefined,
+  signers: string[] | undefined,
+): string[] {
+  const signed = (storedSigned ?? []).map((a) => a.toLowerCase());
+  const signerList = (signers ?? []).map((a) => a.toLowerCase());
+
+  if (status === "completed" && signerList.length > 0) {
+    // If completed but we don't have all signers, or have none, just
+    // show everyone who was supposed to sign.
+    if (signed.length === 0 || signed.length < signerList.length) {
+      return Array.from(new Set(signerList));
+    }
+  }
+
+  return signed;
+}
+
+/* ---------- mapping from storage to UI ---------- */
+
 function mapStoredToUi(
   stored: StoredDocMetadata[],
-  currentAddress?: string | null
+  currentAddress?: string | null,
 ): UiDocument[] {
-  const meLabel =
-    getHandleForAddress(currentAddress) ||
-    currentAddress ||
-    "me.sui";
+  const currentLower = currentAddress ? currentAddress.toLowerCase() : "";
+  const meLabel = currentLower ? formatAddressLabel(currentLower) : "me.sui";
 
-  return stored.map((doc) => ({
-    id: doc.objectId || doc.blobId,
-    subject: doc.subject || "Untitled document",
-    fromLabel: meLabel,
-    toLabels: ["todo"],
-    createdAt: doc.createdAt || "Just now",
-    timestamp: doc.createdAt ? Date.parse(doc.createdAt) : Date.now(),
-    status: "pending",
-    isUnread: true,
-    messagePreview: doc.message || "",
-    contentBody: doc.message || "",
-    walrusBlobId: doc.blobId,
-    tags: ["Local"],
-  }));
+  return stored.map((doc) => {
+    const fromAddr =
+      doc.senderAddress && doc.senderAddress.length
+        ? doc.senderAddress
+        : currentLower;
+
+    const fromLabel = fromAddr ? formatAddressLabel(fromAddr) : meLabel;
+
+    const signerAddresses = (doc.signers ?? []).map((a) => a.toLowerCase());
+    const status: StoredDocStatus = doc.status ?? "pending";
+
+    const effectiveSigned = deriveEffectiveSignedAddresses(
+      status,
+      doc.signedAddresses,
+      signerAddresses,
+    );
+
+    const toLabels =
+      signerAddresses && signerAddresses.length
+        ? signerAddresses.map((addr) => formatAddressLabel(addr))
+        : ["todo"];
+
+    const tags: string[] = [];
+    if (!doc.objectId || !doc.objectId.startsWith("0x")) {
+      tags.push("Local");
+    } else {
+      tags.push("On-chain");
+      if (status === "completed") {
+        tags.push("Signed");
+      }
+    }
+
+    const signedByLabels = buildSignedByLabels(effectiveSigned);
+
+    return {
+      id: doc.objectId || doc.blobId,
+      subject: doc.subject || "Untitled document",
+      fromLabel,
+      toLabels,
+      createdAt: doc.createdAt || "Just now",
+      timestamp: doc.createdAt ? Date.parse(doc.createdAt) : Date.now(),
+      status,
+      isUnread: true,
+      messagePreview: doc.message || "",
+      contentBody: doc.message || "",
+      walrusBlobId: doc.blobId,
+      tags,
+      signedByLabels,
+      signedAddresses: effectiveSigned,
+      signerAddresses,
+    };
+  });
 }
+
+/* ---------- component ---------- */
 
 export const MailDashboard: React.FC<MailDashboardProps> = ({
   currentAddress,
@@ -51,11 +148,16 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
   const [documents, setDocuments] = useState<UiDocument[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [currentFolder, setCurrentFolder] = useState<FolderType>(
-    FolderType.INBOX
+    FolderType.INBOX,
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
-  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+
+  const { mutateAsync: signAndExecuteTransaction } =
+    useSignAndExecuteTransaction();
+
+  /* ----- initial load for current wallet ----- */
+
   useEffect(() => {
     if (!currentAddress) {
       setDocuments(MOCK_DOCUMENTS);
@@ -63,7 +165,7 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
       return;
     }
 
-    const stored = loadDocsForAddress(currentAddress);
+    const stored = loadDocsForAddress(currentAddress.toLowerCase());
     if (!stored.length) {
       setDocuments(MOCK_DOCUMENTS);
       setSelectedDocId(MOCK_DOCUMENTS[0]?.id ?? null);
@@ -75,13 +177,106 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
     setSelectedDocId(uiDocs[0]?.id ?? null);
   }, [currentAddress]);
 
-  const selectedDoc = documents.find((d) => d.id === selectedDocId) || null;
+  /* ----- sync from chain for this wallet's docs ----- */
+
+  useEffect(() => {
+    if (!currentAddress) return;
+
+    const addrLower = currentAddress.toLowerCase();
+
+    async function syncFromChain() {
+      const stored = loadDocsForAddress(addrLower);
+      const candidates = stored
+        .filter((d) => d.objectId && d.objectId.startsWith("0x"))
+        .slice(0, 20);
+
+      const updates: {
+        objectId: string;
+        status: StoredDocStatus;
+        signedAddresses: string[];
+        signerAddresses: string[];
+      }[] = [];
+
+      for (const doc of candidates) {
+        const onChain = await fetchDocumentFromChain(doc.objectId);
+        if (!onChain) continue;
+
+        const signerAddrs = (doc.signers ?? []).map((s) =>
+          String(s || "").toLowerCase(),
+        );
+
+        const chainSigAddrs = (onChain.signatures ?? [])
+          .map((s) => String(s.signer || "").toLowerCase())
+          .filter((s) => s.startsWith("0x"));
+
+        const totalSigners = onChain.signers?.length ?? signerAddrs.length;
+        const sigCount = chainSigAddrs.length;
+
+        let status: StoredDocStatus = "pending";
+        if (onChain.fullySigned || (totalSigners > 0 && sigCount >= totalSigners)) {
+          status = "completed";
+        } else if (sigCount > 0) {
+          status = "signed";
+        }
+
+        // Combine what we had with what the chain knows
+        let mergedSigned = Array.from(
+          new Set<string>([
+            ...(doc.signedAddresses ?? []).map((a) => a.toLowerCase()),
+            ...chainSigAddrs,
+          ]),
+        );
+
+        // If it's completed but we *still* don't have everybody,
+        // just fall back to the signer list.
+        mergedSigned = deriveEffectiveSignedAddresses(
+          status,
+          mergedSigned,
+          signerAddrs,
+        );
+
+        updates.push({
+          objectId: doc.objectId,
+          status,
+          signedAddresses: mergedSigned,
+          signerAddresses: signerAddrs,
+        });
+
+        updateDocStatusForAddress(addrLower, doc.objectId, status);
+        updateDocSignedAddressesForAddress(addrLower, doc.objectId, mergedSigned);
+      }
+
+      if (!updates.length) return;
+
+      setDocuments((prev) =>
+        prev.map((doc) => {
+          const match = updates.find((u) => u.objectId === doc.id);
+          if (!match) return doc;
+          return {
+            ...doc,
+            status: match.status,
+            signedAddresses: match.signedAddresses,
+            signedByLabels: buildSignedByLabels(match.signedAddresses),
+            signerAddresses: match.signerAddresses,
+            isUnread: false,
+          };
+        }),
+      );
+    }
+
+    void syncFromChain();
+  }, [currentAddress]);
+
+  /* ----- derived + handlers ----- */
+
+  const selectedDoc =
+    documents.find((d) => d.id === selectedDocId) || null;
   const filteredDocs = documents; // later: filter by folder
 
   const handleSelectDoc = (id: string) => {
     setSelectedDocId(id);
     setDocuments((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, isUnread: false } : d))
+      prev.map((d) => (d.id === id ? { ...d, isUnread: false } : d)),
     );
   };
 
@@ -104,150 +299,259 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
       throw new Error("Connect your wallet before creating a document.");
     }
 
+    const senderLower = currentAddress.toLowerCase();
+
     const storedDoc = await createDocumentFromCompose({
       subject: payload.subject,
       message: payload.message,
       signerInput: payload.signerInput,
-      senderAddress: currentAddress,
+      senderAddress: senderLower,
       signAndExecute: (args) => signAndExecuteTransaction(args),
     });
 
-    saveDocForAddress(currentAddress, storedDoc);
-    const updatedStored = loadDocsForAddress(currentAddress);
-    const uiDocs = mapStoredToUi(updatedStored, currentAddress);
+    // creator's own copy
+    saveDocForAddress(senderLower, storedDoc);
+
+    // fan out to other signers as "pending"
+    if (storedDoc.signers && storedDoc.signers.length > 0) {
+      for (const signer of storedDoc.signers) {
+        if (!signer) continue;
+        const addr = signer.toLowerCase();
+        if (addr === senderLower) continue;
+
+        saveDocForAddress(addr, {
+          ...storedDoc,
+          status: "pending",
+        });
+      }
+    }
+
+    const updatedStored = loadDocsForAddress(senderLower);
+    const uiDocs = mapStoredToUi(updatedStored, senderLower);
     setDocuments(uiDocs);
     setSelectedDocId(storedDoc.objectId || storedDoc.blobId);
   };
+
   const handleSign = async (docId: string) => {
     if (!currentAddress) {
       throw new Error("Connect your wallet to sign.");
     }
 
+    const meLower = currentAddress.toLowerCase();
+    const target = documents.find((d) => d.id === docId) || null;
+    const signerAddrs = target?.signerAddresses ?? [];
+    const prevSigned = target?.signedAddresses ?? [];
+
     try {
+      // optimistic merge
+      let optimisticMerged = Array.from(
+        new Set<string>([meLower, ...prevSigned.map((a) => a.toLowerCase())]),
+      );
+
+      // If the doc is already completed for some reason, also make sure
+      // we don't *lose* the "all signers" behavior.
+      optimisticMerged = deriveEffectiveSignedAddresses(
+        "signed",
+        optimisticMerged,
+        signerAddrs,
+      );
+
+      setDocuments((prev) =>
+        prev.map((doc) =>
+          doc.id === docId
+            ? {
+                ...doc,
+                status: "signed",
+                isUnread: false,
+                signedAddresses: optimisticMerged,
+                signedByLabels: buildSignedByLabels(optimisticMerged),
+              }
+            : doc,
+        ),
+      );
+
+      updateDocStatusForAddress(meLower, docId, "signed");
+      updateDocSignedAddressesForAddress(meLower, docId, optimisticMerged);
+
       const result = await signDocumentOnChain(
         docId,
         ({ transaction }) => signAndExecuteTransaction({ transaction }),
       );
 
-      console.log("[SuiSign] Updated docs after sign", result);
+      console.log("[SuiSign] sign_document tx result", result);
+
+      const onChain = await fetchDocumentFromChain(docId);
+
+      let mergedSignedAddresses = optimisticMerged;
+      let finalStatus: StoredDocStatus = "signed";
+
+      if (onChain) {
+        const chainSigAddrs = (onChain.signatures ?? [])
+          .map((s) => String(s.signer || "").toLowerCase())
+          .filter((s) => s.startsWith("0x"));
+
+        mergedSignedAddresses = Array.from(
+          new Set<string>([...mergedSignedAddresses, ...chainSigAddrs]),
+        );
+
+        const totalSigners = onChain.signers?.length ?? signerAddrs.length;
+        const sigCount = mergedSignedAddresses.length;
+
+        if (onChain.fullySigned || (totalSigners > 0 && sigCount >= totalSigners)) {
+          finalStatus = "completed";
+        } else if (sigCount === 0) {
+          finalStatus = "pending";
+        }
+      } else if (mergedSignedAddresses.length === 0) {
+        finalStatus = "pending";
+      }
+
+      // If completed, ensure we show *all* signers.
+      mergedSignedAddresses = deriveEffectiveSignedAddresses(
+        finalStatus,
+        mergedSignedAddresses,
+        signerAddrs,
+      );
+
+      const finalSignedByLabels = buildSignedByLabels(mergedSignedAddresses);
 
       setDocuments((prev) =>
         prev.map((doc) =>
           doc.id === docId
-            ? { ...doc, status: "completed", isUnread: false }
-            : doc
-        )
+            ? {
+                ...doc,
+                status: finalStatus,
+                isUnread: false,
+                signedAddresses: mergedSignedAddresses,
+                signedByLabels: finalSignedByLabels,
+              }
+            : doc,
+        ),
+      );
+
+      updateDocStatusForAddress(meLower, docId, finalStatus);
+      updateDocSignedAddressesForAddress(
+        meLower,
+        docId,
+        mergedSignedAddresses,
       );
     } catch (err: any) {
       console.error("[SuiSign] sign failed", err);
       alert(`Sign failed: ${err?.message ?? String(err)}`);
+
+      const storedAfterError = loadDocsForAddress(currentAddress.toLowerCase());
+      const uiDocs = mapStoredToUi(storedAfterError, currentAddress);
+      setDocuments(uiDocs);
     }
   };
 
+  /* ---------- render ---------- */
+
   return (
     <>
-    <div className="flex h-[calc(100vh-64px)] w-full bg-background overflow-hidden">
-      {/* Sidebar */}
-      <div
-        className={`
-        absolute z-40 inset-y-0 left-0 transform transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0 w-64
-        ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
-      `}
-      >
-        <Sidebar
-          currentFolder={currentFolder}
-          onFolderSelect={handleFolderChange}
-          onCompose={handleCompose}
-          currentAddress={currentAddress ?? null}
-        />
-      </div>
-
-      {/* Overlay for mobile sidebar */}
-      {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Main Content Area */}
-      <div className="flex flex-1 flex-col md:flex-row h-full min-w-0">
-        {/* Document List Column */}
+      <div className="flex h-[calc(100vh-64px)] w-full bg-background overflow-hidden">
+        {/* Sidebar */}
         <div
           className={`
-          flex flex-col w-full md:w-96
-          ${selectedDocId ? "hidden md:flex" : "flex"}
-        `}
+            absolute z-40 inset-y-0 left-0 transform transition-transform duration-300 ease-in-out
+            md:relative md:translate-x-0 w-64
+            ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+          `}
         >
-          <div className="p-4 border-b border-slate-800 flex items-center gap-3 md:hidden bg-background/80">
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="text-slate-400 hover:text-white"
-            >
-              {/* simple menu icon */}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-            <h1 className="font-display font-bold text-lg text-white">
-              {currentFolder}
-            </h1>
-          </div>
-
-          <DocumentList
-            documents={filteredDocs}
-            selectedId={selectedDocId}
-            onSelect={handleSelectDoc}
+          <Sidebar
             currentFolder={currentFolder}
+            onFolderSelect={handleFolderChange}
+            onCompose={handleCompose}
+            currentAddress={currentAddress ?? null}
           />
         </div>
 
-        {/* Reading Pane Column */}
-        <div
-          className={`
-          flex-1 relative
-          ${!selectedDocId ? "hidden md:flex" : "flex"}
-        `}
-        >
-          {selectedDocId && (
-            <button
-              onClick={() => setSelectedDocId(null)}
-              className="md:hidden absolute top-4 left-4 z-20 p-2 bg-slate-800 rounded-full text-white shadow-lg"
-            >
-              {/* back arrow */}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-          )}
+        {/* Overlay for mobile sidebar */}
+        {isMobileMenuOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 md:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
 
-          <ReadingPane doc={selectedDoc} onSign={handleSign} />
+        {/* Main Content Area */}
+        <div className="flex flex-1 flex-col md:flex-row h-full min-w-0">
+          {/* Document List Column */}
+          <div
+            className={`
+              flex flex-col w-full md:w-96
+              ${selectedDocId ? "hidden md:flex" : "flex"}
+            `}
+          >
+            <div className="p-4 border-b border-slate-800 flex items-center gap-3 md:hidden bg-background/80">
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="text-slate-400 hover:text-white"
+              >
+                {/* simple menu icon */}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+              <h1 className="font-display font-bold text-lg text-white">
+                {currentFolder}
+              </h1>
+            </div>
+
+            <DocumentList
+              documents={filteredDocs}
+              selectedId={selectedDocId}
+              onSelect={handleSelectDoc}
+              currentFolder={currentFolder}
+            />
+          </div>
+
+          {/* Reading Pane Column */}
+          <div
+            className={`
+              flex-1 relative
+              ${!selectedDocId ? "hidden md:flex" : "flex"}
+            `}
+          >
+            {selectedDocId && (
+              <button
+                onClick={() => setSelectedDocId(null)}
+                className="md:hidden absolute top-4 left-4 z-20 p-2 bg-slate-800 rounded-full text-white shadow-lg"
+              >
+                {/* back arrow */}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+            )}
+
+            <ReadingPane doc={selectedDoc} onSign={handleSign} />
+          </div>
         </div>
       </div>
-    </div>
+
       <ComposePanel
         isOpen={isComposeOpen}
         onClose={() => setIsComposeOpen(false)}

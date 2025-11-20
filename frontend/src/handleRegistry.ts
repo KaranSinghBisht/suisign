@@ -1,72 +1,129 @@
-// frontend/src/handleRegistry.ts
+// /frontend/src/handleRegistry.ts
+//
+// Very simple local handle registry for SuiSign.
+// - Lets you map a short handle or ".sui" name to a Sui address.
+// - Used by:
+//    - resolveHandlesOrAddresses() when composing a document
+//    - getHandleForAddress() when rendering labels in the UI
+//
+// For hackathon purposes this is entirely localStorage-based.
+// Later we can plug in real SuiNS / SNS lookups here.
 
-const HANDLES_KEY = "suisign_handles";
+const HANDLES_STORAGE_KEY = "suisign_handles_v1";
 
-type HandleMap = Record<string, string>; // address (lowercase) -> handle
+export type HandleRecord = {
+  handle: string; // e.g. "kryptos" or "kryptos.sui"
+  address: string; // 0x...
+};
 
-function loadMap(): HandleMap {
+function normaliseHandle(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+function normaliseAddress(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+function loadHandleRecords(): HandleRecord[] {
   try {
-    const raw = localStorage.getItem(HANDLES_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as HandleMap;
+    const raw = localStorage.getItem(HANDLES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as HandleRecord[]).map((r) => ({
+      handle: normaliseHandle(r.handle),
+      address: normaliseAddress(r.address),
+    }));
   } catch {
-    return {};
+    return [];
   }
 }
 
-function saveMap(map: HandleMap) {
-  localStorage.setItem(HANDLES_KEY, JSON.stringify(map));
+function saveHandleRecords(records: HandleRecord[]) {
+  localStorage.setItem(HANDLES_STORAGE_KEY, JSON.stringify(records));
 }
 
-// Get handle for an address
-export function getHandleForAddress(address: string | null | undefined): string | null {
+export function upsertHandle(handle: string, address: string) {
+  const h = normaliseHandle(handle);
+  const a = normaliseAddress(address);
+  if (!h || !a.startsWith("0x")) return;
+
+  const all = loadHandleRecords();
+  const existingIndex = all.findIndex(
+    (r) => r.handle === h || r.address === a,
+  );
+
+  if (existingIndex >= 0) {
+    all[existingIndex] = { handle: h, address: a };
+  } else {
+    all.push({ handle: h, address: a });
+  }
+
+  saveHandleRecords(all);
+}
+
+function lookupByHandle(handle: string): string | null {
+  const h = normaliseHandle(handle);
+  if (!h) return null;
+
+  const all = loadHandleRecords();
+  const rec = all.find((r) => r.handle === h);
+  return rec ? rec.address : null;
+}
+
+function lookupByAddress(address?: string | null): string | null {
   if (!address) return null;
-  const map = loadMap();
-  return map[address.toLowerCase()] ?? null;
+  const a = normaliseAddress(address);
+  if (!a.startsWith("0x")) return null;
+
+  const all = loadHandleRecords();
+  const rec = all.find((r) => r.address === a);
+  return rec ? rec.handle : null;
 }
 
-// Set handle for this address
-export function setHandleForAddress(address: string, handle: string) {
-  const map = loadMap();
-  map[address.toLowerCase()] = handle;
-  saveMap(map);
-}
+export function getHandleForAddress(address?: string | null): string | null {
+  const handle = lookupByAddress(address ?? undefined);
+  if (!handle) return null;
 
-// Find which address owns a handle
-export function findAddressByHandle(handle: string): string | null {
-  const map = loadMap();
-  const target = handle.toLowerCase();
-  for (const [addr, h] of Object.entries(map)) {
-    if (h.toLowerCase() === target) return addr;
+  const h = handle.trim().toLowerCase();
+
+  if (h.startsWith("0x") && !h.includes(".") && h.length > 10) {
+    return null;
   }
-  return null;
-}
 
-// Check if handle is already taken by *another* address
-export function isHandleTaken(handle: string, currentAddress?: string | null): boolean {
-  const owner = findAddressByHandle(handle);
-  if (!owner) return false;
-  if (!currentAddress) return true;
-  return owner.toLowerCase() !== currentAddress.toLowerCase();
+  if (h.endsWith(".sui")) {
+    return handle.replace(/\.sui$/i, "");
+  }
+
+  return handle;
 }
 
 export function resolveHandlesOrAddresses(inputs: string[]): string[] {
-  const resolved = new Set<string>();
+  const resolved: string[] = [];
 
   for (const raw of inputs) {
     const value = raw.trim();
     if (!value) continue;
 
-    if (value.startsWith("0x") && value.length > 10) {
-      resolved.add(value.toLowerCase());
+    const lower = value.toLowerCase();
+
+    if (lower.startsWith("0x") && lower.length > 10) {
+      resolved.push(lower);
+      upsertHandle(lower, lower);
       continue;
     }
 
-    const addr = findAddressByHandle(value);
-    if (addr) {
-      resolved.add(addr.toLowerCase());
+    const handleKey = lower.endsWith(".sui") ? lower : `${lower}.sui`;
+
+    const fromHandle = lookupByHandle(handleKey) ?? lookupByHandle(lower);
+
+    if (fromHandle && fromHandle.startsWith("0x")) {
+      resolved.push(fromHandle);
+      continue;
     }
+
+    console.warn("[SuiSign] Unknown signer handle:", value);
   }
 
-  return Array.from(resolved);
+  return Array.from(new Set(resolved));
 }

@@ -13,12 +13,26 @@ import {
   PenTool,
 } from "lucide-react";
 
+const DEFAULT_EXPLORER_BASE = "https://testnet.suivision.xyz";
+
 interface ReadingPaneProps {
   doc: UiDocument | null;
   onSign?: (docId: string) => Promise<void> | void;
 }
 
 export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
+  const hasOnChainObject = !!doc && doc.id.startsWith("0x");
+
+  function handleOpenExplorer() {
+    if (!doc) return;
+    if (!hasOnChainObject) {
+      alert("This document only exists locally and has no on-chain object yet.");
+      return;
+    }
+    const explorerUrl = `${DEFAULT_EXPLORER_BASE}/object/${doc.id}`;
+    window.open(explorerUrl, "_blank", "noopener,noreferrer");
+  }
+
   if (!doc) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 select-none bg-background">
@@ -124,15 +138,23 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
                   <p className="text-xs uppercase tracking-wider font-bold text-slate-500 mb-4">
                     Signed By
                   </p>
-                  {doc.status === "signed" || doc.status === "completed" ? (
-                    <div className="font-script text-2xl text-blue-900 transform -rotate-2">
-                      {doc.toLabels[0]}
-                    </div>
-                  ) : (
-                    <div className="h-12 w-48 border-b-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 text-xs">
-                      Pending Signature
-                    </div>
-                  )}
+                  <div className="mt-2 text-sm text-sky-500 flex flex-wrap gap-2">
+                    {!doc.signedByLabels || doc.signedByLabels.length === 0 ? (
+                      <span className="text-slate-500 italic">
+                        Pending Signature
+                      </span>
+                    ) : (
+                      doc.signedByLabels.map((label) => (
+                        <span
+                          key={label}
+                          className="inline-block max-w-[180px] truncate align-bottom"
+                          title={label}
+                        >
+                          {label}
+                        </span>
+                      ))
+                    )}
+                  </div>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-slate-400">SuiSign Verified</p>
@@ -151,7 +173,16 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
               <Download size={16} />
               <span>Original</span>
             </button>
-            <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition-colors">
+            <button
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleOpenExplorer}
+              disabled={!hasOnChainObject}
+              title={
+                hasOnChainObject
+                  ? "View this document on Sui Explorer"
+                  : "This document has not been created on-chain yet"
+              }
+            >
               <ExternalLink size={16} />
               <span>Explorer</span>
             </button>

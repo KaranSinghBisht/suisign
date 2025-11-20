@@ -45,6 +45,8 @@ export async function fetchEncryptedBlob(
 
 /* ---------- Local doc metadata storage ---------- */
 
+export type StoredDocStatus = "pending" | "signed" | "completed";
+
 export type StoredDocMetadata = {
   objectId: string;   // on-chain Document id (0x...) or "" if unknown
   blobId: string;     // Walrus blob id (local-... for now)
@@ -54,6 +56,10 @@ export type StoredDocMetadata = {
   subject: string;
   message: string;
   createdAt: string;
+  signers?: string[];
+  status?: StoredDocStatus;
+  signedAddresses?: string[];
+  senderAddress?: string;
 };
 
 const DOCS_KEY_PREFIX = "suisign_docs_";
@@ -109,6 +115,10 @@ export function saveDocForAddress(
     subject: doc.subject ?? "",
     message: doc.message ?? "",
     createdAt: doc.createdAt ?? new Date().toISOString(),
+    signers: doc.signers ?? [],
+    status: doc.status ?? "pending",
+    signedAddresses: doc.signedAddresses ?? [],
+    senderAddress: doc.senderAddress ? doc.senderAddress.toLowerCase() : "",
   };
 
   filtered.push(normalized);
@@ -131,5 +141,59 @@ export function loadLastCreatedDoc(): StoredDocMetadata | null {
     return JSON.parse(raw) as StoredDocMetadata;
   } catch {
     return null;
+  }
+}
+
+export function updateDocStatusForAddress(
+  address: string,
+  docId: string,
+  status: StoredDocStatus,
+): void {
+  if (!address || !docId) return;
+
+  const key = `${DOCS_KEY_PREFIX}${address}`;
+  const list = loadDocsForAddress(address);
+  if (!list.length) return;
+
+  const updated = list.map((d) =>
+    d.objectId === docId || d.blobId === docId ? { ...d, status } : d,
+  );
+
+  localStorage.setItem(key, JSON.stringify(updated));
+
+  const last = loadLastCreatedDoc();
+  if (last && (last.objectId === docId || last.blobId === docId)) {
+    localStorage.setItem(
+      LAST_CREATED_KEY,
+      JSON.stringify({ ...last, status }),
+    );
+  }
+}
+
+export function updateDocSignedAddressesForAddress(
+  address: string,
+  docId: string,
+  signedAddresses: string[],
+): void {
+  if (!address || !docId) return;
+
+  const key = `${DOCS_KEY_PREFIX}${address}`;
+  const list = loadDocsForAddress(address);
+  if (!list.length) return;
+
+  const updated = list.map((d) =>
+    d.objectId === docId || d.blobId === docId
+      ? { ...d, signedAddresses }
+      : d,
+  );
+
+  localStorage.setItem(key, JSON.stringify(updated));
+
+  const last = loadLastCreatedDoc();
+  if (last && (last.objectId === docId || last.blobId === docId)) {
+    localStorage.setItem(
+      LAST_CREATED_KEY,
+      JSON.stringify({ ...last, signedAddresses }),
+    );
   }
 }

@@ -232,5 +232,8 @@ export async function createDocumentFromCompose(
     subject: input.subject,
     message: input.message,
     createdAt: new Date().toISOString(),
+    signers: signerAddresses,
+    signedAddresses: [],
+    senderAddress: input.senderAddress.toLowerCase(),
   };
 }

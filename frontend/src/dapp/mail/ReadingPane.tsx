@@ -12,7 +12,7 @@ import {
   XCircle,
   PenTool,
 } from "lucide-react";
-import { readSealSecretForDoc } from "../../sealClient";
+import { readSealSecretForDoc, SEAL_ENOACCESS } from "../../sealClient";
 import { fetchEncryptedBlob } from "../../storage";
 import { decryptMessageFromWalrus } from "../../cryptoHelpers";
 
@@ -90,7 +90,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
       }
     } catch (err: any) {
       console.error("[SuiSign] decrypt failed", err);
-      setDecryptError(err?.message ?? String(err));
+      if (err?.code === SEAL_ENOACCESS) {
+        setDecryptError("You’re not authorized to decrypt this document.");
+      } else {
+        setDecryptError(err?.message ?? String(err));
+      }
     } finally {
       setIsDecrypting(false);
     }
@@ -191,7 +195,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
 
             <div className="flex flex-col gap-3">
               <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-                {doc.messagePreview}
+                {decryptedBody
+                  ? decryptedBody.slice(0, 160)
+                  : doc.walrusBlobId && doc.sealSecretId
+                    ? "🔐 Encrypted message body. Decrypt to view."
+                    : doc.messagePreview || ""}
               </p>
               {doc.walrusBlobId && doc.sealSecretId && (
                 <button
@@ -216,13 +224,18 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                 {isDecrypting && (
                   <span className="text-slate-400 text-xs">Decrypting…</span>
                 )}
+
                 {decryptError && (
                   <span className="text-red-500 text-xs">
                     Failed to decrypt: {decryptError}
                   </span>
                 )}
+
                 {!isDecrypting && !decryptError && (
-                  decryptedBody || doc.contentBody || "Content failed to load."
+                  decryptedBody ??
+                  (doc.walrusBlobId && doc.sealSecretId
+                    ? "🔐 This message is encrypted. Click “Decrypt message” above to view the contents."
+                    : "Content not available for this document.")
                 )}
               </div>
 

@@ -1,46 +1,69 @@
 // /frontend/src/storage.ts
-// Walrus stub + local doc metadata store.
+// Walrus HTTP client wrappers + local doc metadata store.
 
-import { toBase64 } from "./cryptoHelpers";
+import { walrusStoreBlob, walrusReadBlob } from "./walrusClient";
+import { toBase64, fromBase64 } from "./cryptoHelpers";
 
 /* ---------- Walrus blob storage ---------- */
 
-export type StoredBlob = {
-  cipherB64: string;
-  ivB64: string;
-  mimeType: string;
-  fileName: string;
+export type StoredWalrusBlobMeta = {
+  blobId: string;
+  objectId?: string;
 };
 
-const BLOB_STORAGE_PREFIX = "suisign_blob_";
+const WALRUS_META_KEY = "suisign_walrus_meta_v1";
 
-export async function saveEncryptedBlob(
-  cipherBytes: Uint8Array,
-  ivB64: string,
-  mimeType: string,
-  fileName: string,
-): Promise<string> {
-  const id = `local-${crypto.randomUUID()}`;
-
-  const record: StoredBlob = {
-    cipherB64: toBase64(cipherBytes),
-    ivB64,
-    mimeType,
-    fileName,
-  };
-
-  localStorage.setItem(BLOB_STORAGE_PREFIX + id, JSON.stringify(record));
-
-  // In real Walrus integration, this would be the walrus_blob_id
-  return id;
+function loadWalrusMetaMap(): Record<string, StoredWalrusBlobMeta> {
+  try {
+    const raw = localStorage.getItem(WALRUS_META_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, StoredWalrusBlobMeta>;
+  } catch {
+    return {};
+  }
 }
 
-export async function fetchEncryptedBlob(
-  blobId: string,
-): Promise<StoredBlob | null> {
-  const raw = localStorage.getItem(BLOB_STORAGE_PREFIX + blobId);
-  if (!raw) return null;
-  return JSON.parse(raw) as StoredBlob;
+function saveWalrusMetaMap(map: Record<string, StoredWalrusBlobMeta>) {
+  localStorage.setItem(WALRUS_META_KEY, JSON.stringify(map));
+}
+
+/**
+ * Upload encrypted ciphertext to Walrus and return IDs.
+ * `cipherB64` is base64 of the AES ciphertext.
+ */
+export async function storeEncryptedBlobToWalrus(options: {
+  cipherB64: string;
+  epochs?: number;
+}): Promise<StoredWalrusBlobMeta> {
+  const bytes = fromBase64(options.cipherB64);
+
+  const result = await walrusStoreBlob(bytes, {
+    epochs: options.epochs ?? 1,
+    permanent: true,
+  });
+
+  const meta: StoredWalrusBlobMeta = {
+    blobId: result.blobId,
+    objectId: result.objectId,
+  };
+
+  const map = loadWalrusMetaMap();
+  map[meta.blobId] = meta;
+  saveWalrusMetaMap(map);
+
+  return meta;
+}
+
+/**
+ * Fetch ciphertext from Walrus by blobId, return in the same shape as before.
+ */
+export async function fetchEncryptedBlob(blobId: string): Promise<{
+  cipherB64: string;
+}> {
+  const bytes = await walrusReadBlob(blobId);
+  return {
+    cipherB64: toBase64(bytes),
+  };
 }
 
 /* ---------- Local doc metadata storage ---------- */
@@ -49,13 +72,15 @@ export type StoredDocStatus = "pending" | "signed" | "completed";
 
 export type StoredDocMetadata = {
   objectId: string;   // on-chain Document id (0x...) or "" if unknown
-  blobId: string;     // Walrus blob id (local-... for now)
+  blobId: string;     // Walrus blob id
+  walrusBlobObjectId?: string; // optional Sui blob object id from Walrus
   hashHex: string;
+  messagePreview?: string;
   ivB64?: string;
   keyB64?: string;
   sealSecretId?: string;
   subject: string;
-  message: string;
+  message?: string;
   createdAt: string;
   signers?: string[];
   status?: StoredDocStatus;
@@ -110,12 +135,14 @@ export function saveDocForAddress(
   const normalized: StoredDocMetadata = {
     objectId: doc.objectId ?? "",
     blobId: doc.blobId ?? docKey,
+    walrusBlobObjectId: doc.walrusBlobObjectId,
     hashHex: doc.hashHex ?? "",
     ivB64: doc.ivB64 ?? "",
     keyB64: doc.keyB64 ?? "",
     sealSecretId: doc.sealSecretId ?? "",
     subject: doc.subject ?? "",
     message: doc.message ?? "",
+    messagePreview: doc.messagePreview ?? doc.message ?? "",
     createdAt: doc.createdAt ?? new Date().toISOString(),
     signers: doc.signers ?? [],
     status: doc.status ?? "pending",

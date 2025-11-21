@@ -115,6 +115,11 @@ function mapStoredToUi(
 
     const signedByLabels = buildSignedByLabels(effectiveSigned);
 
+    const safePreview =
+      typeof doc.messagePreview === "string" && doc.messagePreview.length > 0
+        ? doc.messagePreview
+        : doc.message || "";
+
     return {
       id: doc.objectId || doc.blobId,
       subject: doc.subject || "Untitled document",
@@ -124,8 +129,7 @@ function mapStoredToUi(
       timestamp: doc.createdAt ? Date.parse(doc.createdAt) : Date.now(),
       status,
       isUnread: true,
-      messagePreview: doc.message || "",
-      contentBody: doc.message || "",
+      messagePreview: safePreview,
       walrusBlobId: doc.blobId,
       walrusHashHex: doc.hashHex,
       sealSecretId: doc.sealSecretId || undefined,

@@ -1,5 +1,5 @@
 // /frontend/src/cryptoHelpers.ts
-import { saveEncryptedBlob } from "./storage";
+import { storeEncryptedBlobToWalrus } from "./storage";
 // Utility: convert ArrayBuffer to hex
 export function toHex(buffer: ArrayBuffer): string {
 	const bytes = new Uint8Array(buffer);
@@ -100,6 +100,7 @@ export async function decryptDocument(
 
 export type EncryptedWalrusResult = {
 	blobId: string;
+  walrusBlobObjectId?: string;
 	hashHex: string;
 	ivB64: string;
 	keyB64: string;
@@ -124,15 +125,15 @@ export async function encryptMessageAndUploadToWalrus(opts: {
 	const { cipherBytes, keyB64, ivB64 } = await encryptDocument(payloadBytes.buffer);
 	const hashHex = await sha256(payloadBytes.buffer);
 
-	const blobId = await saveEncryptedBlob(
-		cipherBytes,
-		ivB64,
-		'application/json',
-		`suisign-message-${Date.now()}.json`,
-	);
+	const cipherB64 = toBase64(cipherBytes);
+	const walrusMeta = await storeEncryptedBlobToWalrus({
+		cipherB64,
+		epochs: 5,
+	});
 
 	return {
-		blobId,
+		blobId: walrusMeta.blobId,
+    walrusBlobObjectId: walrusMeta.objectId,
 		hashHex,
 		ivB64,
 		keyB64,

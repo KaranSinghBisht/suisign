@@ -10,8 +10,9 @@ export interface UiDocument {
   timestamp: number; // for sorting
   status: DocStatus;
   isUnread: boolean;
-  messagePreview: string;
-  contentBody?: string; // full mock body
+  messagePreview?: string | null;
+  // Body is no longer persisted in UI model; require decrypt to view.
+  contentBody?: null;
   walrusBlobId?: string; // Walrus blob id
   walrusHashHex?: string;
   sealSecretId?: string;

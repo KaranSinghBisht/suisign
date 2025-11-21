@@ -7,11 +7,15 @@ import { fromHEX } from "@mysten/sui/utils";
 import { SealClient, SessionKey, EncryptedObject } from "@mysten/seal";
 import { toBase64, fromBase64 } from "./cryptoHelpers";
 
+// We key off this string when Seal reports "not authorized" for a decrypt.
+export const SEAL_ENOACCESS = "ENoAccess" as const;
+
 export type CreateSealSecretInput = {
   docIdHint?: string;
   keyB64: string;
   ivB64: string;
-  allowedAddresses: string[]; // owner + all signers (lowercased)
+  // owner + all signers (lowercased) – reserved for future policy wiring
+  allowedAddresses: string[];
 };
 
 export type SealSecretPayload = {
@@ -23,7 +27,8 @@ const SUISIGN_PACKAGE_ID = import.meta.env
   .VITE_SUISIGN_PACKAGE_ID as string;
 
 // Not used yet, but keep for future on-chain decrypt.
-const SEAL_PACKAGE_ID = import.meta.env.VITE_SEAL_PACKAGE_ID as string | undefined;
+const SEAL_PACKAGE_ID = import.meta.env
+  .VITE_SEAL_PACKAGE_ID as string | undefined;
 
 // Comma-separated Seal key server object IDs (0x... addresses)
 const SEAL_SERVER_IDS: string[] = (import.meta.env.VITE_SEAL_SERVER_IDS || "")
@@ -90,7 +95,7 @@ async function ensureSessionKey(
 
   sessionInitPromise = (async () => {
     const sk = await SessionKey.create({
-      address: currentSessionAddress,
+      address: currentSessionAddress!,
       packageId: SUISIGN_PACKAGE_ID,
       ttlMin: 10,
       suiClient: getSuiClient(),
@@ -121,6 +126,25 @@ function randomPolicyIdHex(): string {
     .join("");
 }
 
+function sanitizeHexIdentity(raw?: string | null): string | null {
+  if (!raw) return null;
+
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const withoutPrefix = trimmed.replace(/^0x/i, "");
+
+  if (!/^[0-9a-fA-F]+$/.test(withoutPrefix)) {
+    console.warn(
+      "[SuiSign] createSealSecretForDoc: ignoring non-hex docIdHint:",
+      raw,
+    );
+    return null;
+  }
+
+  return withoutPrefix.toLowerCase();
+}
+
 // Build PTB for `suisign::document::seal_approve`
 async function buildSealApproveTxBytes(
   docObjectId: string,
@@ -133,14 +157,18 @@ async function buildSealApproveTxBytes(
   const idBytes = fromHEX(encryptedObject.id);
 
   const tx = new Transaction();
+
+  // Optional but nice: make PTB sender match the Seal session address.
+  if (currentSessionAddress) {
+    tx.setSender(currentSessionAddress);
+  }
+
   tx.moveCall({
     target: `${SUISIGN_PACKAGE_ID}::document::seal_approve`,
-    arguments: [
-      tx.pure.vector("u8", idBytes),
-      tx.object(docObjectId),
-    ],
+    arguments: [tx.pure.vector("u8", idBytes), tx.object(docObjectId)],
   });
 
+  // Seal expects TransactionKind bytes so it can inspect the programmable tx.
   return await tx.build({
     client,
     onlyTransactionKind: true,
@@ -161,7 +189,8 @@ export async function createSealSecretForDoc(
   });
 
   const data = new TextEncoder().encode(payload);
-  const policyIdHex = randomPolicyIdHex();
+  const hinted = sanitizeHexIdentity(input.docIdHint);
+  const policyIdHex = hinted ?? randomPolicyIdHex();
 
   const { encryptedObject: encryptedBytes } = await client.encrypt({
     threshold: 1,

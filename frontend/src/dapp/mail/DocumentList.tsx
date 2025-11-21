@@ -106,7 +106,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
                   {doc.subject}
                 </h3>
                 <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                  {doc.messagePreview}
+                  {doc.messagePreview || ""}
                 </p>
               </div>
 

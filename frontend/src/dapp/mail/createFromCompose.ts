@@ -240,11 +240,16 @@ export async function createDocumentFromCompose(
   return {
     objectId: createdObjectId || "",
     blobId: encrypted.blobId,
+    walrusBlobObjectId: encrypted.walrusBlobObjectId,
     hashHex: encrypted.hashHex,
     ivB64: "",
     keyB64: "",
     subject: input.subject,
-    message: input.message,
+    message: "",
+    messagePreview:
+      input.message.length > 160
+        ? `${input.message.slice(0, 157)}…`
+        : input.message,
     createdAt: new Date().toISOString(),
     signers: signerAddresses,
     signedAddresses: [],

@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           size={18}
           className="text-blue-400 group-hover:text-blue-300"
         />
-        <span className="font-medium">Sign New Doc</span>
+        <span className="font-medium">Send new doc</span>
       </button>
 
       {/* Navigation Links */}

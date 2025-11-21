@@ -24,7 +24,8 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
   const [message, setMessage] = React.useState("");
   const [mode, setMode] = React.useState<ComposeMode>("message");
   const [file, setFile] = React.useState<File | null>(null);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -33,7 +34,8 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
       setMessage("");
       setFile(null);
       setMode("message");
-      setIsSubmitting(false);
+      setIsCreating(false);  
+      setError(null);        
     }
   }, [isOpen]);
 
@@ -66,7 +68,7 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isCreating) return;
 
     const trimmedSubject = subject.trim();
     const trimmedSigners = signerInput.trim();
@@ -92,7 +94,8 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
     }
 
     try {
-      setIsSubmitting(true);
+      setError(null);
+      setIsCreating(true);
       await onCreate({
         subject: trimmedSubject,
         signerInput: trimmedSigners,
@@ -100,13 +103,17 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
         message: mode === "message" ? trimmedMessage : "",
         file: mode === "file" ? file : null,
       });
-      onClose();
     } catch (err: any) {
       console.error("[SuiSign] compose failed", err);
-      alert(err?.message ?? String(err));
+      setError(
+        err?.message ??
+          "Something went wrong while creating the document.",
+      );
+      return;
     } finally {
-      setIsSubmitting(false);
+      setIsCreating(false);
     }
+    onClose();
   };
 
   return (
@@ -177,12 +184,20 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
               className="w-full text-sm px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="kryptos, 0xabc..., alice.sui"
               value={signerInput}
-              onChange={(e) => setSignerInput(e.target.value)}
+              onChange={(e) => {
+                setSignerInput(e.target.value);
+                if (error) setError(null);
+              }}
             />
             <p className="text-[11px] text-slate-500">
               Everyone listed here will be able to decrypt this document (via
               Seal).
             </p>
+            {error && (
+              <p className="text-xs text-red-400 mt-1">
+                {error}
+              </p>
+            )}
           </div>
 
           {/* Mode-specific content */}
@@ -232,10 +247,10 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isCreating}
               className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-md shadow-blue-500/30 disabled:opacity-60"
             >
-              {isSubmitting ? "Creating…" : "Create secure doc"}
+              {isCreating ? "Creating…" : "Create secure doc"}
             </button>
           </div>
         </form>

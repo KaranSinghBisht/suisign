@@ -22,6 +22,7 @@ export interface UiDocument {
   signedByLabels?: string[];
   signedAddresses?: string[];
   signerAddresses?: string[];
+  senderAddress?: string;
 
   // Content metadata
   contentKind?: ContentKind;   // "message" (default) or "file"

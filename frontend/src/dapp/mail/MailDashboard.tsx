@@ -82,12 +82,14 @@ function mapStoredToUi(
   const meLabel = currentLower ? formatAddressLabel(currentLower) : "me.sui";
 
   return stored.map((doc) => {
-    const fromAddr =
+    const senderAddrLower =
       doc.senderAddress && doc.senderAddress.length
-        ? doc.senderAddress
-        : currentLower;
+        ? doc.senderAddress.toLowerCase()
+        : "";
 
-    const fromLabel = fromAddr ? formatAddressLabel(fromAddr) : meLabel;
+    const fromLabel = senderAddrLower
+      ? formatAddressLabel(senderAddrLower)
+      : meLabel;
 
     const signerAddresses = (doc.signers ?? []).map((a) => a.toLowerCase());
     const status: StoredDocStatus = doc.status ?? "pending";
@@ -140,6 +142,7 @@ function mapStoredToUi(
       signedByLabels,
       signedAddresses: effectiveSigned,
       signerAddresses,
+      senderAddress: senderAddrLower || undefined,
 
       contentKind,
       fileName: doc.fileName ?? undefined,
@@ -190,10 +193,10 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
 
   useEffect(() => {
     if (!currentAddress) return;
-
     const addrLower = currentAddress.toLowerCase();
+    let isMounted = true;
 
-    async function syncFromChain() {
+    async function syncFromChainOnce() {
       const stored = loadDocsForAddress(addrLower);
       const candidates = stored
         .filter((d) => d.objectId && d.objectId.startsWith("0x"))
@@ -263,32 +266,49 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
 
       if (!updates.length) return;
 
-      setDocuments((prev) =>
-        prev.map((doc) => {
-          const match = updates.find((u) => u.objectId === doc.id);
-          if (!match) return doc;
-          return {
-            ...doc,
-            status: match.status,
-            signedAddresses: match.signedAddresses,
-            signedByLabels: buildSignedByLabels(match.signedAddresses),
-            signerAddresses: match.signerAddresses,
-            walrusBlobId: match.walrusBlobId || doc.walrusBlobId,
-            walrusHashHex: match.walrusHashHex || doc.walrusHashHex,
-            sealSecretId: match.sealSecretId || doc.sealSecretId,
-            isUnread: false,
-          };
-        }),
-      );
+      if (!isMounted) return;
+      const storedAfter = loadDocsForAddress(addrLower);
+      const uiDocs = mapStoredToUi(storedAfter, currentAddress);
+      setDocuments(uiDocs);
     }
 
-    void syncFromChain();
+    void syncFromChainOnce();
+
+    const id = window.setInterval(() => {
+      if (!isMounted) return;
+      void syncFromChainOnce();
+    }, 20000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(id);
+    };
   }, [currentAddress]);
 
   /* ----- derived + handlers ----- */
 
   const selectedDoc = documents.find((d) => d.id === selectedDocId) || null;
-  const filteredDocs = documents;
+
+  const filteredDocs = React.useMemo(() => {
+    if (!currentAddress) return documents;
+    const me = currentAddress.toLowerCase();
+
+    switch (currentFolder) {
+      case FolderType.INBOX:
+        return documents.filter((doc) =>
+          (doc.signerAddresses ?? []).some(
+            (addr) => addr && addr.toLowerCase() === me,
+          ),
+        );
+      case FolderType.SENT:
+        return documents.filter(
+          (doc) =>
+            doc.senderAddress && doc.senderAddress.toLowerCase() === me,
+        );
+      default:
+        return documents;
+    }
+  }, [documents, currentAddress, currentFolder]);
 
   const handleSelectDoc = (id: string) => {
     setSelectedDocId(id);
@@ -360,6 +380,29 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
     const signerAddrs = target?.signerAddresses ?? [];
     const prevSigned = target?.signedAddresses ?? [];
 
+    if (!target) {
+      console.warn("[SuiSign] handleSign called with unknown docId:", docId);
+      return;
+    }
+
+    if (
+      signerAddrs.length &&
+      !signerAddrs.some((addr) => addr && addr.toLowerCase() === meLower)
+    ) {
+      console.warn(
+        "[SuiSign] current user is not a signer; ignoring sign click",
+      );
+      return;
+    }
+
+    if (!target.id || !target.id.startsWith("0x")) {
+      console.warn(
+        "[SuiSign] document has no on-chain object; cannot sign",
+        target.id,
+      );
+      return;
+    }
+
     try {
       let optimisticMerged = Array.from(
         new Set<string>([meLower, ...prevSigned.map((a) => a.toLowerCase())]),
@@ -384,9 +427,6 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
             : doc,
         ),
       );
-
-      updateDocStatusForAddress(meLower, docId, "signed");
-      updateDocSignedAddressesForAddress(meLower, docId, optimisticMerged);
 
       const result = await signDocumentOnChain(
         docId,

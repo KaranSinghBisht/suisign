@@ -7,7 +7,6 @@ import {
 } from "@mysten/dapp-kit";
 import { MailDashboard } from "./mail/MailDashboard";
 import { resetSealSessionForAddress } from "../sealClient";
-import { upsertHandle } from "../handleRegistry";
 
 function truncateAddress(addr: string, n = 4) {
   if (!addr) return "";
@@ -23,10 +22,6 @@ export default function DappApp() {
 
     resetSealSessionForAddress(addr);
 
-    if (addr) {
-      upsertHandle("kryptos", addr);
-      upsertHandle("kryptos.sui", addr);
-    }
   }, [currentAccount?.address]);
 
   return (

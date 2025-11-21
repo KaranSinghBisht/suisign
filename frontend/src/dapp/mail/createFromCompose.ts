@@ -216,12 +216,13 @@ export async function createDocumentFromCompose(
     throw new Error("At least one signer is required");
   }
 
-  // First pass: use handle registry resolver
-  let signerAddresses = resolveHandlesOrAddresses(rawPieces);
-
   const senderAddrLower = input.senderAddress.toLowerCase();
 
-  // Fallback: if nothing resolved, accept direct sender address if entered
+  // First pass: resolve SuiNS handles and 0x addresses
+  let signerAddresses = await resolveHandlesOrAddresses(rawPieces);
+
+  // Fallback: if nothing resolved, accept direct sender address if they
+  // literally typed their own 0x address in the field.
   if (!signerAddresses.length) {
     for (const raw of rawPieces) {
       const v = raw.trim().toLowerCase();
@@ -233,7 +234,7 @@ export async function createDocumentFromCompose(
 
   if (!signerAddresses.length) {
     throw new Error(
-      "Could not resolve any valid signer addresses. Use a 0x... address or a registered handle.",
+      "Could not resolve any valid signer addresses. Use a 0x... address or a registered .sui name on testnet.",
     );
   }
 

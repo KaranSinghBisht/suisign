@@ -1,129 +1,120 @@
-// /frontend/src/handleRegistry.ts
-//
-// Very simple local handle registry for SuiSign.
-// - Lets you map a short handle or ".sui" name to a Sui address.
-// - Used by:
-//    - resolveHandlesOrAddresses() when composing a document
-//    - getHandleForAddress() when rendering labels in the UI
-//
-// For hackathon purposes this is entirely localStorage-based.
-// Later we can plug in real SuiNS / SNS lookups here.
+import { SuiClient, getFullnodeUrl } from "@mysten/sui/client";
 
-const HANDLES_STORAGE_KEY = "suisign_handles_v1";
+const client = new SuiClient({ url: getFullnodeUrl("testnet") });
 
-export type HandleRecord = {
-  handle: string; // e.g. "kryptos" or "kryptos.sui"
-  address: string; // 0x...
+const STORAGE_KEY = "suisign_handle_cache_v1";
+
+type StoredHandleCache = {
+  nameToAddress: Record<string, string>;
+  addressToName: Record<string, string>;
 };
 
-function normaliseHandle(raw: string): string {
-  return raw.trim().toLowerCase();
+const NAME_TO_ADDRESS = new Map<string, string>();
+const ADDRESS_TO_NAME = new Map<string, string>();
+
+function normalizeName(raw: string): string {
+  let name = raw.trim().toLowerCase();
+  if (!name.endsWith(".sui")) {
+    name = `${name}.sui`;
+  }
+  return name;
 }
 
-function normaliseAddress(raw: string): string {
-  return raw.trim().toLowerCase();
+/**
+ * Given a 0x address, return the bare handle (e.g. "kryptos"),
+ * or "" if we don't know one yet.
+ *
+ * This is sync on purpose so the UI can keep using it.
+ */
+export function getHandleForAddress(addr: string): string {
+  if (!addr) return "";
+  const lower = addr.toLowerCase();
+  const full = ADDRESS_TO_NAME.get(lower);
+  if (!full) return "";
+  return full.endsWith(".sui") ? full.slice(0, -4) : full;
 }
 
-function loadHandleRecords(): HandleRecord[] {
+function loadFromStorage() {
   try {
-    const raw = localStorage.getItem(HANDLES_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return (parsed as HandleRecord[]).map((r) => ({
-      handle: normaliseHandle(r.handle),
-      address: normaliseAddress(r.address),
-    }));
-  } catch {
-    return [];
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as StoredHandleCache;
+
+    Object.entries(parsed.nameToAddress || {}).forEach(([name, addr]) => {
+      NAME_TO_ADDRESS.set(name, addr);
+    });
+    Object.entries(parsed.addressToName || {}).forEach(([addr, name]) => {
+      ADDRESS_TO_NAME.set(addr, name);
+    });
+  } catch (err) {
+    console.warn("[SuiSign] Failed to load handle cache from storage:", err);
   }
 }
 
-function saveHandleRecords(records: HandleRecord[]) {
-  localStorage.setItem(HANDLES_STORAGE_KEY, JSON.stringify(records));
-}
+function saveToStorage() {
+  try {
+    const nameToAddress: Record<string, string> = {};
+    const addressToName: Record<string, string> = {};
 
-export function upsertHandle(handle: string, address: string) {
-  const h = normaliseHandle(handle);
-  const a = normaliseAddress(address);
-  if (!h || !a.startsWith("0x")) return;
+    NAME_TO_ADDRESS.forEach((addr, name) => {
+      nameToAddress[name] = addr;
+    });
+    ADDRESS_TO_NAME.forEach((name, addr) => {
+      addressToName[addr] = name;
+    });
 
-  const all = loadHandleRecords();
-  const existingIndex = all.findIndex(
-    (r) => r.handle === h || r.address === a,
-  );
-
-  if (existingIndex >= 0) {
-    all[existingIndex] = { handle: h, address: a };
-  } else {
-    all.push({ handle: h, address: a });
+    const payload: StoredHandleCache = { nameToAddress, addressToName };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    console.warn("[SuiSign] Failed to save handle cache to storage:", err);
   }
-
-  saveHandleRecords(all);
 }
 
-function lookupByHandle(handle: string): string | null {
-  const h = normaliseHandle(handle);
-  if (!h) return null;
+loadFromStorage();
 
-  const all = loadHandleRecords();
-  const rec = all.find((r) => r.handle === h);
-  return rec ? rec.address : null;
-}
+/**
+ * Resolve a list of signer inputs into 0x addresses.
+ *
+ * - "0x..." is treated as a direct address
+ * - "kryptos" or "kryptos.sui" is resolved via SuiNS on testnet
+ */
+export async function resolveHandlesOrAddresses(
+  pieces: string[],
+): Promise<string[]> {
+  const results: string[] = [];
 
-function lookupByAddress(address?: string | null): string | null {
-  if (!address) return null;
-  const a = normaliseAddress(address);
-  if (!a.startsWith("0x")) return null;
+  for (const raw of pieces) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
 
-  const all = loadHandleRecords();
-  const rec = all.find((r) => r.address === a);
-  return rec ? rec.handle : null;
-}
-
-export function getHandleForAddress(address?: string | null): string | null {
-  const handle = lookupByAddress(address ?? undefined);
-  if (!handle) return null;
-
-  const h = handle.trim().toLowerCase();
-
-  if (h.startsWith("0x") && !h.includes(".") && h.length > 10) {
-    return null;
-  }
-
-  if (h.endsWith(".sui")) {
-    return handle.replace(/\.sui$/i, "");
-  }
-
-  return handle;
-}
-
-export function resolveHandlesOrAddresses(inputs: string[]): string[] {
-  const resolved: string[] = [];
-
-  for (const raw of inputs) {
-    const value = raw.trim();
-    if (!value) continue;
-
-    const lower = value.toLowerCase();
-
-    if (lower.startsWith("0x") && lower.length > 10) {
-      resolved.push(lower);
-      upsertHandle(lower, lower);
+    if (/^0x[0-9a-fA-F]{40,}$/.test(trimmed)) {
+      results.push(trimmed.toLowerCase());
       continue;
     }
 
-    const handleKey = lower.endsWith(".sui") ? lower : `${lower}.sui`;
+    const name = normalizeName(trimmed);
 
-    const fromHandle = lookupByHandle(handleKey) ?? lookupByHandle(lower);
-
-    if (fromHandle && fromHandle.startsWith("0x")) {
-      resolved.push(fromHandle);
+    const cached = NAME_TO_ADDRESS.get(name);
+    if (cached) {
+      results.push(cached);
       continue;
     }
 
-    console.warn("[SuiSign] Unknown signer handle:", value);
+    try {
+      const addr = await client.resolveNameServiceAddress({ name });
+      if (addr) {
+        const lower = addr.toLowerCase();
+        NAME_TO_ADDRESS.set(name, lower);
+        ADDRESS_TO_NAME.set(lower, name);
+        saveToStorage();
+        results.push(lower);
+      } else {
+        console.warn("[SuiSign] No address for SuiNS name", name);
+      }
+    } catch (err) {
+      console.warn("[SuiSign] Failed to resolve SuiNS name", name, err);
+    }
   }
 
-  return Array.from(new Set(resolved));
+  return results;
 }

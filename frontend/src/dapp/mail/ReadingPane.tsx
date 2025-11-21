@@ -30,6 +30,7 @@ interface ReadingPaneProps {
 export const ReadingPane: React.FC<ReadingPaneProps> = ({
   doc,
   onSign,
+  currentAddress,
   signPersonalMessage,
 }) => {
   const hasOnChainObject = !!doc?.id && doc.id.startsWith("0x");
@@ -57,6 +58,24 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
       }
     };
   }, [decryptedFileUrl]);
+
+  const meLower = (currentAddress ?? "").toLowerCase();
+  const signerAddrs = doc?.signerAddresses ?? [];
+  const isSigner =
+    !!meLower &&
+    signerAddrs.some((addr) => addr && addr.toLowerCase() === meLower);
+
+  const isOnChain = !!doc?.id && doc.id.startsWith("0x");
+  const canSign =
+    !!doc && doc.status === "pending" && isSigner && isOnChain;
+
+  const signDisabledReason = !doc
+    ? ""
+    : !isOnChain
+    ? "This document hasn’t been created on-chain yet."
+    : !isSigner
+    ? "You’re not a signer on this document."
+    : "";
 
   const isFileDoc =
     !!doc &&
@@ -413,8 +432,18 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                   <span>Reject</span>
                 </button>
                 <button
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-bold shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02] transition-all"
-                  onClick={() => onSign?.(doc.id)}
+                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all
+        ${
+          canSign
+            ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02]"
+            : "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+        }`}
+                  disabled={!canSign}
+                  title={signDisabledReason || undefined}
+                  onClick={() => {
+                    if (!canSign) return;
+                    onSign?.(doc.id);
+                  }}
                 >
                   <PenTool size={18} />
                   <span>Sign Document</span>

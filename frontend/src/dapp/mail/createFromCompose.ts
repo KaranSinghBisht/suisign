@@ -3,10 +3,11 @@ import { Transaction } from "@mysten/sui/transactions";
 import { SuiClient, getFullnodeUrl } from "@mysten/sui/client";
 import { resolveHandlesOrAddresses } from "../../handleRegistry";
 import { encryptMessageAndUploadToWalrus } from "../../cryptoHelpers";
+import type { EncryptedWalrusResult } from "../../cryptoHelpers";
+import { createSealSecretForDoc } from "../../sealClient";
 import type { StoredDocMetadata } from "../../storage";
 
 const PACKAGE_ID = import.meta.env.VITE_SUISIGN_PACKAGE_ID as string;
-const DEFAULT_SEAL_KEY_ID = "compose-auto";
 
 type SignAndExecuteFn = (args: {
   transaction: Transaction;
@@ -167,18 +168,31 @@ export async function createDocumentFromCompose(
     }
   }
 
-  console.log("[SuiSign] signerInput", rawPieces, "resolved", signerAddresses);
-
   if (!signerAddresses.length) {
     throw new Error(
       "Could not resolve any valid signer addresses. Use a 0x... address or a registered handle.",
     );
   }
 
-  const encrypted = await encryptMessageAndUploadToWalrus({
-    subject: input.subject,
-    message: input.message,
-    senderAddress: input.senderAddress,
+  signerAddresses = signerAddresses.map((addr) => addr.toLowerCase());
+  console.log("[SuiSign] signerInput", rawPieces, "resolved", signerAddresses);
+
+  const encrypted: EncryptedWalrusResult =
+    await encryptMessageAndUploadToWalrus({
+      subject: input.subject,
+      message: input.message,
+      senderAddress: input.senderAddress,
+    });
+
+  const allAddresses = Array.from(
+    new Set([senderAddrLower, ...signerAddresses]),
+  );
+
+  const sealSecretId = await createSealSecretForDoc({
+    docIdHint: encrypted.blobId,
+    keyB64: encrypted.keyB64,
+    ivB64: encrypted.ivB64,
+    allowedAddresses: allAddresses,
   });
 
   const tx = new Transaction();
@@ -187,7 +201,7 @@ export async function createDocumentFromCompose(
     arguments: [
       tx.pure.string(encrypted.blobId),
       tx.pure.string(encrypted.hashHex),
-      tx.pure.string(DEFAULT_SEAL_KEY_ID),
+      tx.pure.string(sealSecretId),
       tx.pure.vector("address", signerAddresses),
     ],
   });
@@ -227,13 +241,14 @@ export async function createDocumentFromCompose(
     objectId: createdObjectId || "",
     blobId: encrypted.blobId,
     hashHex: encrypted.hashHex,
-    ivB64: encrypted.ivB64,
-    keyB64: encrypted.keyB64,
+    ivB64: "",
+    keyB64: "",
     subject: input.subject,
     message: input.message,
     createdAt: new Date().toISOString(),
     signers: signerAddresses,
     signedAddresses: [],
     senderAddress: input.senderAddress.toLowerCase(),
+    sealSecretId,
   };
 }

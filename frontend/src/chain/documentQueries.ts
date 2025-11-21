@@ -10,6 +10,8 @@ export type ChainDocument = {
   id: string;
   owner: string;
   walrusBlobId?: string;
+  walrusHashHex?: string;
+  sealSecretId?: string;
   fullySigned: boolean;
   signers: string[];
   signatures: ChainSignature[];
@@ -20,6 +22,29 @@ const NETWORKS: Array<"devnet" | "testnet" | "mainnet"> = [
   "devnet",
   "mainnet",
 ];
+
+function decodeChainString(raw: any): string | undefined {
+  if (raw === null || raw === undefined) return undefined;
+
+  if (typeof raw === "string") {
+    if (/^\d+(,\d+)+$/.test(raw.trim())) {
+      const nums = raw.split(",").map((n) => Number(n.trim()));
+      if (nums.every((n) => Number.isFinite(n))) {
+        return String.fromCharCode(...nums);
+      }
+    }
+    return raw;
+  }
+
+  if (Array.isArray(raw)) {
+    const nums = raw.map((n) => Number(n));
+    if (nums.every((n) => Number.isFinite(n))) {
+      return String.fromCharCode(...nums);
+    }
+  }
+
+  return String(raw);
+}
 
 function parseChainDocument(raw: any): ChainDocument | null {
   const content = raw?.data?.content;
@@ -62,10 +87,25 @@ function parseChainDocument(raw: any): ChainDocument | null {
 
   const fullySigned = Boolean(fields.fully_signed);
 
+  const walrusBlobId =
+    fields.walrus_blob_id !== undefined && fields.walrus_blob_id !== null
+      ? decodeChainString(fields.walrus_blob_id)
+      : undefined;
+  const walrusHashHex =
+    fields.walrus_hash_hex !== undefined && fields.walrus_hash_hex !== null
+      ? decodeChainString(fields.walrus_hash_hex)
+      : undefined;
+  const sealSecretId =
+    fields.seal_secret_id !== undefined && fields.seal_secret_id !== null
+      ? decodeChainString(fields.seal_secret_id)
+      : undefined;
+
   return {
     id: String(raw.data?.objectId ?? ""),
     owner: String(fields.owner ?? ""),
-    walrusBlobId: (fields.walrus_blob_id as any) ?? undefined,
+    walrusBlobId,
+    walrusHashHex,
+    sealSecretId,
     fullySigned,
     signers,
     signatures,

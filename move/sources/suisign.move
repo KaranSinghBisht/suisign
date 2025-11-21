@@ -1,9 +1,10 @@
 module suisign::document {
+    use std::string;
     use std::vector;
-    use sui::object;
-    use sui::tx_context;
-    use sui::transfer;
     use sui::clock;
+    use sui::object;
+    use sui::transfer;
+    use sui::tx_context;
 
     /// A single signature on a document.
     public struct SignatureRecord has copy, drop, store {
@@ -15,19 +16,22 @@ module suisign::document {
     public struct Document has key, store {
         id: object::UID,
         owner: address,
-        walrus_blob_id: vector<u8>,
-        doc_hash: vector<u8>,
-        seal_key_id: vector<u8>,
+        walrus_blob_id: string::String,
+        walrus_hash_hex: string::String,
+        /// Base64-encoded Seal encrypted payload containing AES key + IV.
+        seal_secret_id: string::String,
         signers: vector<address>,
         signatures: vector<SignatureRecord>,
         fully_signed: bool,
     }
 
+    const E_NO_ACCESS: u64 = 10;
+
     /// Create a new document and share it so that other signers can call `sign_document`.
     public entry fun create_document(
-        walrus_blob_id: vector<u8>,
-        doc_hash: vector<u8>,
-        seal_key_id: vector<u8>,
+        walrus_blob_id: string::String,
+        walrus_hash_hex: string::String,
+        seal_secret_id: string::String,
         signers: vector<address>,
         ctx: &mut tx_context::TxContext,
     ) {
@@ -37,8 +41,8 @@ module suisign::document {
             id: object::new(ctx),
             owner,
             walrus_blob_id,
-            doc_hash,
-            seal_key_id,
+            walrus_hash_hex,
+            seal_secret_id,
             signers,
             signatures: vector::empty<SignatureRecord>(),
             fully_signed: false,
@@ -74,6 +78,21 @@ module suisign::document {
         if (vector::length(&doc.signatures) == vector::length(&doc.signers)) {
             doc.fully_signed = true;
         };
+    }
+
+    /// Seal access-control hook.
+    /// Anyone who is owner or in `signers` can decrypt the AES key for this document.
+    ///
+    /// For now we ignore `id` and just enforce:
+    ///   sender == owner  OR  sender ∈ signers
+    public entry fun seal_approve(
+        _id: vector<u8>,
+        doc: &Document,
+        ctx: &tx_context::TxContext,
+    ) {
+        let caller = tx_context::sender(ctx);
+        let allowed = caller == doc.owner || is_signer(&doc.signers, caller);
+        assert!(allowed, E_NO_ACCESS);
     }
 
     /// Check if an address is in the allowed signers list.

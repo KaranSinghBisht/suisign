@@ -1,4 +1,4 @@
-// /frontend/src/dapp/mail/MailDashboard.tsx
+// frontend/src/dapp/mail/MailDashboard.tsx
 
 import React, { useState, useEffect } from "react";
 import { useSignAndExecuteTransaction } from "@mysten/dapp-kit";
@@ -23,6 +23,9 @@ import { fetchDocumentFromChain } from "../../chain/documentQueries";
 
 interface MailDashboardProps {
   currentAddress?: string | null;
+  signPersonalMessage?: (input: {
+    message: Uint8Array;
+  }) => Promise<{ signature: string }>;
 }
 
 /* ---------- helpers ---------- */
@@ -31,7 +34,6 @@ function formatAddressLabel(addr: string): string {
   if (!addr) return "";
   const handle = getHandleForAddress(addr);
   if (handle && handle.length > 0) {
-    // handles already come without ".sui"
     return `${handle}.sui`;
   }
   if (addr.startsWith("0x") && addr.length > 10) {
@@ -53,11 +55,6 @@ function buildSignedByLabels(addrs: string[] | undefined | null): string[] {
   return Array.from(new Set(labels));
 }
 
-/**
- * If a document is completed and we *know* the full signer list,
- * force signedAddresses to be "all signers", even if the local
- * list is partial / empty.
- */
 function deriveEffectiveSignedAddresses(
   status: StoredDocStatus | undefined,
   storedSigned: string[] | undefined,
@@ -67,8 +64,6 @@ function deriveEffectiveSignedAddresses(
   const signerList = (signers ?? []).map((a) => a.toLowerCase());
 
   if (status === "completed" && signerList.length > 0) {
-    // If completed but we don't have all signers, or have none, just
-    // show everyone who was supposed to sign.
     if (signed.length === 0 || signed.length < signerList.length) {
       return Array.from(new Set(signerList));
     }
@@ -132,6 +127,8 @@ function mapStoredToUi(
       messagePreview: doc.message || "",
       contentBody: doc.message || "",
       walrusBlobId: doc.blobId,
+      walrusHashHex: doc.hashHex,
+      sealSecretId: doc.sealSecretId || undefined,
       tags,
       signedByLabels,
       signedAddresses: effectiveSigned,
@@ -144,6 +141,7 @@ function mapStoredToUi(
 
 export const MailDashboard: React.FC<MailDashboardProps> = ({
   currentAddress,
+  signPersonalMessage,
 }) => {
   const [documents, setDocuments] = useState<UiDocument[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -195,6 +193,9 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
         status: StoredDocStatus;
         signedAddresses: string[];
         signerAddresses: string[];
+        walrusBlobId?: string;
+        walrusHashHex?: string;
+        sealSecretId?: string;
       }[] = [];
 
       for (const doc of candidates) {
@@ -213,13 +214,15 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
         const sigCount = chainSigAddrs.length;
 
         let status: StoredDocStatus = "pending";
-        if (onChain.fullySigned || (totalSigners > 0 && sigCount >= totalSigners)) {
+        if (
+          onChain.fullySigned ||
+          (totalSigners > 0 && sigCount >= totalSigners)
+        ) {
           status = "completed";
         } else if (sigCount > 0) {
           status = "signed";
         }
 
-        // Combine what we had with what the chain knows
         let mergedSigned = Array.from(
           new Set<string>([
             ...(doc.signedAddresses ?? []).map((a) => a.toLowerCase()),
@@ -227,8 +230,6 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
           ]),
         );
 
-        // If it's completed but we *still* don't have everybody,
-        // just fall back to the signer list.
         mergedSigned = deriveEffectiveSignedAddresses(
           status,
           mergedSigned,
@@ -240,6 +241,9 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
           status,
           signedAddresses: mergedSigned,
           signerAddresses: signerAddrs,
+          walrusBlobId: onChain.walrusBlobId ?? doc.blobId,
+          walrusHashHex: onChain.walrusHashHex ?? doc.hashHex,
+          sealSecretId: onChain.sealSecretId ?? doc.sealSecretId ?? "",
         });
 
         updateDocStatusForAddress(addrLower, doc.objectId, status);
@@ -258,6 +262,9 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
             signedAddresses: match.signedAddresses,
             signedByLabels: buildSignedByLabels(match.signedAddresses),
             signerAddresses: match.signerAddresses,
+            walrusBlobId: match.walrusBlobId || doc.walrusBlobId,
+            walrusHashHex: match.walrusHashHex || doc.walrusHashHex,
+            sealSecretId: match.sealSecretId || doc.sealSecretId,
             isUnread: false,
           };
         }),
@@ -269,9 +276,8 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
 
   /* ----- derived + handlers ----- */
 
-  const selectedDoc =
-    documents.find((d) => d.id === selectedDocId) || null;
-  const filteredDocs = documents; // later: filter by folder
+  const selectedDoc = documents.find((d) => d.id === selectedDocId) || null;
+  const filteredDocs = documents;
 
   const handleSelectDoc = (id: string) => {
     setSelectedDocId(id);
@@ -309,10 +315,8 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
       signAndExecute: (args) => signAndExecuteTransaction(args),
     });
 
-    // creator's own copy
     saveDocForAddress(senderLower, storedDoc);
 
-    // fan out to other signers as "pending"
     if (storedDoc.signers && storedDoc.signers.length > 0) {
       for (const signer of storedDoc.signers) {
         if (!signer) continue;
@@ -343,13 +347,10 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
     const prevSigned = target?.signedAddresses ?? [];
 
     try {
-      // optimistic merge
       let optimisticMerged = Array.from(
         new Set<string>([meLower, ...prevSigned.map((a) => a.toLowerCase())]),
       );
 
-      // If the doc is already completed for some reason, also make sure
-      // we don't *lose* the "all signers" behavior.
       optimisticMerged = deriveEffectiveSignedAddresses(
         "signed",
         optimisticMerged,
@@ -397,7 +398,10 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
         const totalSigners = onChain.signers?.length ?? signerAddrs.length;
         const sigCount = mergedSignedAddresses.length;
 
-        if (onChain.fullySigned || (totalSigners > 0 && sigCount >= totalSigners)) {
+        if (
+          onChain.fullySigned ||
+          (totalSigners > 0 && sigCount >= totalSigners)
+        ) {
           finalStatus = "completed";
         } else if (sigCount === 0) {
           finalStatus = "pending";
@@ -406,7 +410,6 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
         finalStatus = "pending";
       }
 
-      // If completed, ensure we show *all* signers.
       mergedSignedAddresses = deriveEffectiveSignedAddresses(
         finalStatus,
         mergedSignedAddresses,
@@ -488,7 +491,6 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
                 onClick={() => setIsMobileMenuOpen(true)}
                 className="text-slate-400 hover:text-white"
               >
-                {/* simple menu icon */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="24"
@@ -530,7 +532,6 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
                 onClick={() => setSelectedDocId(null)}
                 className="md:hidden absolute top-4 left-4 z-20 p-2 bg-slate-800 rounded-full text-white shadow-lg"
               >
-                {/* back arrow */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="20"
@@ -547,7 +548,16 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
               </button>
             )}
 
-            <ReadingPane doc={selectedDoc} onSign={handleSign} />
+            <ReadingPane
+              doc={selectedDoc}
+              onSign={handleSign}
+              currentAddress={currentAddress ?? null}
+              signPersonalMessage={
+                signPersonalMessage
+                  ? async ({ message }) => signPersonalMessage({ message })
+                  : undefined
+              }
+            />
           </div>
         </div>
       </div>

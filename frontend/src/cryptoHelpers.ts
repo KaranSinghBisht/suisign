@@ -98,7 +98,7 @@ export async function decryptDocument(
 	return plaintext;
 }
 
-export type EncryptedWalrusDoc = {
+export type EncryptedWalrusResult = {
 	blobId: string;
 	hashHex: string;
 	ivB64: string;
@@ -109,7 +109,7 @@ export async function encryptMessageAndUploadToWalrus(opts: {
 	subject: string;
 	message: string;
 	senderAddress: string;
-}): Promise<EncryptedWalrusDoc> {
+}): Promise<EncryptedWalrusResult> {
 	const payload = {
 		v: 1,
 		kind: 'text_message',
@@ -137,4 +137,15 @@ export async function encryptMessageAndUploadToWalrus(opts: {
 		ivB64,
 		keyB64,
 	};
+}
+
+export async function decryptMessageFromWalrus(input: {
+	cipherB64: string;
+	keyB64: string;
+	ivB64: string;
+}): Promise<string> {
+	const cipherBytes = fromBase64(input.cipherB64);
+	const plaintextBuffer = await decryptDocument(cipherBytes, input.keyB64, input.ivB64);
+	const decoder = new TextDecoder();
+	return decoder.decode(new Uint8Array(plaintextBuffer));
 }

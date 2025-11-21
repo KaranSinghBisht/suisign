@@ -51,8 +51,9 @@ export type StoredDocMetadata = {
   objectId: string;   // on-chain Document id (0x...) or "" if unknown
   blobId: string;     // Walrus blob id (local-... for now)
   hashHex: string;
-  ivB64: string;
-  keyB64: string;
+  ivB64?: string;
+  keyB64?: string;
+  sealSecretId?: string;
   subject: string;
   message: string;
   createdAt: string;
@@ -112,6 +113,7 @@ export function saveDocForAddress(
     hashHex: doc.hashHex ?? "",
     ivB64: doc.ivB64 ?? "",
     keyB64: doc.keyB64 ?? "",
+    sealSecretId: doc.sealSecretId ?? "",
     subject: doc.subject ?? "",
     message: doc.message ?? "",
     createdAt: doc.createdAt ?? new Date().toISOString(),

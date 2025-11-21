@@ -13,6 +13,8 @@ export interface UiDocument {
   messagePreview: string;
   contentBody?: string; // full mock body
   walrusBlobId?: string; // Walrus blob id
+  walrusHashHex?: string;
+  sealSecretId?: string;
   tags?: string[];
   signedByLabels?: string[];
   signedAddresses?: string[];

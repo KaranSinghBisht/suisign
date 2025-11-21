@@ -1,6 +1,13 @@
 // frontend/src/dapp/DappApp.tsx
-import { ConnectButton, useCurrentAccount } from "@mysten/dapp-kit";
+import React from "react";
+import {
+  ConnectButton,
+  useCurrentAccount,
+  useSignPersonalMessage,
+} from "@mysten/dapp-kit";
 import { MailDashboard } from "./mail/MailDashboard";
+import { resetSealSessionForAddress } from "../sealClient";
+import { upsertHandle } from "../handleRegistry";
 
 function truncateAddress(addr: string, n = 4) {
   if (!addr) return "";
@@ -9,6 +16,18 @@ function truncateAddress(addr: string, n = 4) {
 
 export default function DappApp() {
   const currentAccount = useCurrentAccount();
+  const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
+
+  React.useEffect(() => {
+    const addr = currentAccount?.address ?? null;
+
+    resetSealSessionForAddress(addr);
+
+    if (addr) {
+      upsertHandle("kryptos", addr);
+      upsertHandle("kryptos.sui", addr);
+    }
+  }, [currentAccount?.address]);
 
   return (
     <div className="relative min-h-screen bg-background text-slate-200">
@@ -40,7 +59,10 @@ export default function DappApp() {
 
       {/* Main Gmail-style dashboard */}
       <main className="relative">
-        <MailDashboard currentAddress={currentAccount?.address ?? null} />
+        <MailDashboard
+          currentAddress={currentAccount?.address ?? null}
+          signPersonalMessage={signPersonalMessage}
+        />
       </main>
     </div>
   );

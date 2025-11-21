@@ -1,4 +1,4 @@
-// /frontend/src/dapp/mail/ReadingPane.tsx
+// frontend/src/dapp/mail/ReadingPane.tsx
 import React from "react";
 import { UiDocument } from "./types";
 import { Badge } from "./Badge";
@@ -12,16 +12,89 @@ import {
   XCircle,
   PenTool,
 } from "lucide-react";
+import { readSealSecretForDoc } from "../../sealClient";
+import { fetchEncryptedBlob } from "../../storage";
+import { decryptMessageFromWalrus } from "../../cryptoHelpers";
 
 const DEFAULT_EXPLORER_BASE = "https://testnet.suivision.xyz";
 
 interface ReadingPaneProps {
   doc: UiDocument | null;
   onSign?: (docId: string) => Promise<void> | void;
+  currentAddress?: string | null;
+  signPersonalMessage?: (input: {
+    message: Uint8Array;
+  }) => Promise<{ signature: string }>;
 }
 
-export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
-  const hasOnChainObject = !!doc && doc.id.startsWith("0x");
+export const ReadingPane: React.FC<ReadingPaneProps> = ({
+  doc,
+  onSign,
+  signPersonalMessage,
+}) => {
+  const hasOnChainObject = !!doc?.id && doc.id.startsWith("0x");
+  const [decryptedBody, setDecryptedBody] = React.useState<string | null>(null);
+  const [decryptError, setDecryptError] = React.useState<string | null>(null);
+  const [isDecrypting, setIsDecrypting] = React.useState(false);
+
+  React.useEffect(() => {
+    setDecryptedBody(null);
+    setDecryptError(null);
+    setIsDecrypting(false);
+  }, [doc?.id]);
+
+  async function handleDecrypt() {
+    if (!doc || !doc.walrusBlobId || !doc.sealSecretId) {
+      setDecryptError("This document has no encrypted content");
+      return;
+    }
+
+    if (!signPersonalMessage) {
+      setDecryptError("Wallet does not support personal message signing");
+      return;
+    }
+
+    setIsDecrypting(true);
+    setDecryptError(null);
+
+    try {
+      const { keyB64, ivB64 } = await readSealSecretForDoc(
+        doc.id,
+        doc.sealSecretId,
+        {
+          signPersonalMessage: async (msg: Uint8Array) => {
+            const { signature } = await signPersonalMessage({ message: msg });
+            return signature;
+          },
+        },
+      );
+
+      const blob = await fetchEncryptedBlob(doc.walrusBlobId);
+      if (!blob) {
+        throw new Error("Encrypted Walrus blob not found");
+      }
+
+      const plaintext = await decryptMessageFromWalrus({
+        cipherB64: blob.cipherB64,
+        ivB64,
+        keyB64,
+      });
+
+      try {
+        const parsed = JSON.parse(plaintext);
+        const body =
+          typeof parsed.message === "string" ? parsed.message : plaintext;
+        setDecryptedBody(body);
+      } catch {
+        setDecryptedBody(plaintext);
+      }
+    } catch (err: any) {
+      console.error("[SuiSign] decrypt failed", err);
+      setDecryptError(err?.message ?? String(err));
+    } finally {
+      setIsDecrypting(false);
+    }
+  }
 
   function handleOpenExplorer() {
     if (!doc) return;
@@ -71,7 +144,6 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
           </div>
         </div>
 
-        {/* Desktop Actions */}
         <div className="hidden md:flex items-center gap-2">
           <button
             className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
@@ -117,9 +189,20 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
               </div>
             </div>
 
-            <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-              {doc.messagePreview}
-            </p>
+            <div className="flex flex-col gap-3">
+              <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                {doc.messagePreview}
+              </p>
+              {doc.walrusBlobId && doc.sealSecretId && (
+                <button
+                  onClick={handleDecrypt}
+                  disabled={isDecrypting}
+                  className="mt-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {isDecrypting ? "Decrypting…" : "Decrypt message"}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Document Preview Body */}
@@ -130,7 +213,17 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
                 {doc.subject}
               </h2>
               <div className="whitespace-pre-wrap text-sm md:text-base leading-loose text-slate-800">
-                {doc.contentBody || "Content failed to load."}
+                {isDecrypting && (
+                  <span className="text-slate-400 text-xs">Decrypting…</span>
+                )}
+                {decryptError && (
+                  <span className="text-red-500 text-xs">
+                    Failed to decrypt: {decryptError}
+                  </span>
+                )}
+                {!isDecrypting && !decryptError && (
+                  decryptedBody || doc.contentBody || "Content failed to load."
+                )}
               </div>
 
               <div className="mt-16 pt-8 border-t border-slate-300 flex justify-between items-end">
@@ -204,12 +297,12 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({ doc, onSign }) => {
                 </button>
               </>
             )}
-            {doc.status === "signed" || doc.status === "completed" ? (
+            {(doc.status === "signed" || doc.status === "completed") && (
               <button className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 cursor-default">
                 <FileCheck size={18} />
                 <span>Signed & Verified</span>
               </button>
-            ) : null}
+            )}
           </div>
         </div>
       </div>

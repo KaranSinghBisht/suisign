@@ -16,7 +16,7 @@ export const TeamSection: React.FC = () => {
           >
             <div className="text-accent font-mono text-sm mb-4 tracking-widest uppercase flex items-center gap-2">
               <span className="w-8 h-[1px] bg-accent" />
-              Enterprise Ready
+              For DAOs & Teams
             </div>
             <h2 className="text-4xl md:text-5xl font-display font-bold text-white mb-6">Built for decentralized teams.</h2>
             <p className="text-slate-400 text-lg mb-8 leading-relaxed">
@@ -25,10 +25,10 @@ export const TeamSection: React.FC = () => {
 
             <ul className="space-y-6">
               {[
-                "Shared team inboxes for document visibility",
-                "Multisig wallet support (Gnosis Safe style)",
-                "Automated notifications via email or Discord",
-                "Audit-ready CSV exports"
+                "Gmail-style inbox to track pending and completed agreements",
+                "Wallet-based identities with SuiNS support for signers",
+                "Seal-gated decryption so only listed wallets can view contents",
+                "On-chain proofs on Sui backed by Walrus encrypted storage"
               ].map((item, i) => (
                 <motion.li 
                   key={i}

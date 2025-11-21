@@ -29,7 +29,7 @@ export const SecuritySection: React.FC = () => {
                     <Code size={14} /> Client-Side Encryption
                   </h4>
                   <p className="text-slate-400 text-sm leading-relaxed">
-                    Files are encrypted in your browser using AES-GCM before upload. We never see your unencrypted documents. Keys are distributed only to designated wallet addresses.
+                    Files are encrypted in your browser using AES-GCM before upload. We never see your unencrypted documents. Decryption keys are managed by Mysten&apos;s Seal and are only accessible to designated wallet addresses.
                   </p>
                 </div>
                 

@@ -1,7 +1,7 @@
 // frontend/src/landing/Components/Footer.tsx
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Github, Twitter, Disc } from 'lucide-react';
+import { Github, Twitter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const Footer: React.FC = () => {
@@ -20,7 +20,7 @@ export const Footer: React.FC = () => {
             Ready to sign?
           </h2>
           <p className="text-xl text-slate-400 mb-10 max-w-xl mx-auto">
-            Join hundreds of DAOs and teams moving their agreements fully on-chain.
+            Built for DAOs and teams who want their agreements fully on-chain.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
             <button
@@ -29,9 +29,6 @@ export const Footer: React.FC = () => {
               className="w-full sm:w-auto px-8 py-4 bg-primary text-white rounded-full font-bold hover:bg-blue-600 transition-all hover:scale-105 shadow-[0_0_40px_rgba(59,130,246,0.4)]"
             >
               Launch SuiSign
-            </button>
-            <button className="w-full sm:w-auto px-8 py-4 text-slate-300 hover:text-white font-medium underline decoration-slate-700 hover:decoration-white underline-offset-4 transition-all">
-              Read Documentation
             </button>
           </div>
         </motion.div>
@@ -43,9 +40,22 @@ export const Footer: React.FC = () => {
           </div>
           
           <div className="flex gap-6 text-slate-500">
-            <a href="#" className="hover:text-white transition-colors"><Twitter size={20} /></a>
-            <a href="#" className="hover:text-white transition-colors"><Github size={20} /></a>
-            <a href="#" className="hover:text-white transition-colors"><Disc size={20} /></a>
+            <a
+              href="https://x.com/Karan_Bisht09"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-white transition-colors"
+            >
+              <Twitter size={20} />
+            </a>
+            <a
+              href="https://github.com/KaranSinghBisht/suisign"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-white transition-colors"
+            >
+              <Github size={20} />
+            </a>
           </div>
         </div>
       </div>

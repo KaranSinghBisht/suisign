@@ -6,19 +6,19 @@ const steps = [
   {
     id: 1,
     title: "Upload Agreement",
-    desc: "Drag & drop PDF or text contracts. We encrypt metadata locally.",
+    desc: "Drag & drop PDF or text contracts. We encrypt the document contents locally before upload.",
     icon: Upload
   },
   {
     id: 2,
     title: "Define Signers",
-    desc: "Add signer wallet addresses (SuiNS supported). Set signing order if needed.",
+    desc: "Add signer wallet addresses or SuiNS names. Only those wallets can decrypt via Seal.",
     icon: Users
   },
   {
     id: 3,
     title: "Execute On-Chain",
-    desc: "Signers connect wallets and sign. A final proof is minted to your dashboard.",
+    desc: "Signers connect wallets and sign. A final on-chain proof appears in your dashboard.",
     icon: PenTool
   }
 ];

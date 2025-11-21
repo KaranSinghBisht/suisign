@@ -8,17 +8,17 @@ const features = [
   {
     icon: Lock,
     title: "End-to-End Encrypted",
-    desc: "Documents are AES-256 encrypted client-side before they ever leave your device. Only invited wallets hold the keys."
+    desc: "Documents are AES-GCM encrypted client-side before they ever leave your device. Only invited wallets can decrypt via Seal-gated keys."
   },
   {
     icon: Database,
     title: "Walrus Storage",
-    desc: "Leveraging decentralized storage via Walrus ensures your agreements are permanent, redundant, and uncensorable."
+    desc: "Encrypted blobs are stored via Walrus, giving you decentralized, redundant storage for your agreements."
   },
   {
     icon: Fingerprint,
     title: "Wallet Identity",
-    desc: "Forget emails. Sign with your Sui address or NS name. Verification is mathematical, not just a click."
+    desc: "Forget emails. Sign with your Sui address or SuiNS name. Verification is mathematical, not just a click."
   },
   {
     icon: Zap,

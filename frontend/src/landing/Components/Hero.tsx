@@ -69,7 +69,7 @@ export const Hero: React.FC = () => {
             </h1>
             
             <p className="text-lg text-slate-400 mb-10 max-w-xl leading-relaxed">
-              The standard for Web3 agreements. Upload documents, verify identities with wallet signatures, and store encrypted proofs on Sui + Walrus.
+              The standard for Web3 agreements. Upload documents, verify identities with wallet signatures and SuiNS names, and store encrypted proofs on Sui + Walrus with keys gated by Mysten&apos;s Seal.
             </p>
             
             <div className="flex flex-wrap gap-4">
@@ -82,7 +82,14 @@ export const Hero: React.FC = () => {
                 Launch App
               </button>
               
-              <ShinyButton>
+              <ShinyButton
+                type="button"
+                onClick={() => {
+                  document
+                    .getElementById("how-it-works")
+                    ?.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
                 How it works
                 <ArrowRight size={18} />
               </ShinyButton>

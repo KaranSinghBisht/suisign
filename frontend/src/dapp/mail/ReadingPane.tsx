@@ -426,29 +426,23 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
 
           <div className="flex items-center gap-3 w-full md:w-auto">
             {doc.status === "pending" && (
-              <>
-                <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-sm font-medium hover:bg-red-500/20 transition-colors">
-                  <XCircle size={18} />
-                  <span>Reject</span>
-                </button>
-                <button
-                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all
+              <button
+                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all
         ${
           canSign
             ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02]"
             : "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
         }`}
-                  disabled={!canSign}
-                  title={signDisabledReason || undefined}
-                  onClick={() => {
-                    if (!canSign) return;
-                    onSign?.(doc.id);
-                  }}
-                >
-                  <PenTool size={18} />
-                  <span>Sign Document</span>
-                </button>
-              </>
+                disabled={!canSign}
+                title={signDisabledReason || undefined}
+                onClick={() => {
+                  if (!canSign) return;
+                  onSign?.(doc.id);
+                }}
+              >
+                <PenTool size={18} />
+                <span>Sign Document</span>
+              </button>
             )}
             {(doc.status === "signed" || doc.status === "completed") && (
               <button className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 cursor-default">

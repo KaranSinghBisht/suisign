@@ -25,6 +25,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       doc.fromLabel.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  if (!documents.length) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-xs text-slate-500 px-4 text-center">
+        {currentFolder === FolderType.INBOX
+          ? "No documents yet. Connect your wallet and have someone send you a document."
+          : "No documents in this folder yet."}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-surface/50 backdrop-blur-sm border-r border-slate-800">
       {/* Search & Toolbar */}

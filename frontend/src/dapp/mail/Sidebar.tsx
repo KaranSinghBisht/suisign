@@ -1,13 +1,6 @@
 import React from "react";
 import { FolderType } from "./types";
-import {
-  Inbox,
-  Send,
-  FileText,
-  Archive,
-  Trash2,
-  PenTool,
-} from "lucide-react";
+import { Inbox, Send, PenTool } from "lucide-react";
 import { getHandleForAddress } from "../../handleRegistry";
 
 interface SidebarProps {
@@ -31,9 +24,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { type: FolderType.INBOX, icon: Inbox, label: "Inbox", count: 2 },
     { type: FolderType.SENT, icon: Send, label: "Sent", count: 0 },
-    { type: FolderType.DRAFTS, icon: FileText, label: "Drafts", count: 1 },
-    { type: FolderType.ARCHIVE, icon: Archive, label: "Archive", count: 0 },
-    { type: FolderType.TRASH, icon: Trash2, label: "Trash", count: 0 },
   ];
 
   return (

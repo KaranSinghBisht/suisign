@@ -172,15 +172,15 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
 
   useEffect(() => {
     if (!currentAddress) {
-      setDocuments(MOCK_DOCUMENTS);
-      setSelectedDocId(MOCK_DOCUMENTS[0]?.id ?? null);
+      setDocuments([]);
+      setSelectedDocId(null);
       return;
     }
 
     const stored = loadDocsForAddress(currentAddress.toLowerCase());
     if (!stored.length) {
-      setDocuments(MOCK_DOCUMENTS);
-      setSelectedDocId(MOCK_DOCUMENTS[0]?.id ?? null);
+      setDocuments([]);
+      setSelectedDocId(null);
       return;
     }
 
@@ -318,7 +318,10 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
   };
 
   const handleFolderChange = (folder: FolderType) => {
-    setCurrentFolder(folder);
+    const allowed = [FolderType.INBOX, FolderType.SENT];
+    setCurrentFolder(
+      allowed.includes(folder) ? folder : FolderType.INBOX,
+    );
     setSelectedDocId(null);
     setIsMobileMenuOpen(false);
   };

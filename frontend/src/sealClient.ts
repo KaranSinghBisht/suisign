@@ -121,25 +121,6 @@ function randomPolicyIdHex(): string {
     .join("");
 }
 
-function sanitizeHexIdentity(raw?: string | null): string | null {
-  if (!raw) return null;
-
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  const withoutPrefix = trimmed.replace(/^0x/i, "");
-
-  if (!/^[0-9a-fA-F]+$/.test(withoutPrefix)) {
-    console.warn(
-      "[SuiSign] createSealSecretForDoc: ignoring non-hex docIdHint:",
-      raw,
-    );
-    return null;
-  }
-
-  return withoutPrefix.toLowerCase();
-}
-
 // Build PTB for `suisign::document::seal_approve`
 async function buildSealApproveTxBytes(
   docObjectId: string,
@@ -180,9 +161,7 @@ export async function createSealSecretForDoc(
   });
 
   const data = new TextEncoder().encode(payload);
-
-  const hinted = sanitizeHexIdentity(input.docIdHint);
-  const policyIdHex = hinted ?? randomPolicyIdHex();
+  const policyIdHex = randomPolicyIdHex();
 
   const { encryptedObject: encryptedBytes } = await client.encrypt({
     threshold: 1,

@@ -21,8 +21,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCompose,
   currentAddress,
 }) => {
+  const isConnected = !!currentAddress;
   const navItems = [
-    { type: FolderType.INBOX, icon: Inbox, label: "Inbox", count: 2 },
+    { type: FolderType.INBOX, icon: Inbox, label: "Inbox", count: 0 },
     { type: FolderType.SENT, icon: Send, label: "Sent", count: 0 },
   ];
 
@@ -40,8 +41,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Compose Button */}
       <button
-        onClick={onCompose}
-        className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-all duration-200 mb-8 border border-slate-700 hover:border-slate-600 shadow-sm group"
+        type="button"
+        onClick={() => {
+          if (!isConnected) return;
+          onCompose();
+        }}
+        disabled={!isConnected}
+        title={
+          isConnected
+            ? "Create a new secure document"
+            : "Connect your wallet to create a new document"
+        }
+        className={`
+          flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl transition-all duration-200 mb-8 border shadow-sm group text-sm font-semibold
+          ${
+            isConnected
+              ? "bg-primary text-white hover:bg-blue-600 border-slate-700 hover:border-slate-600"
+              : "bg-slate-800/60 text-slate-500 cursor-not-allowed border border-slate-700/60"
+          }
+        `}
       >
         <PenTool
           size={18}

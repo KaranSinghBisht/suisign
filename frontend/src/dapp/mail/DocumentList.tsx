@@ -18,6 +18,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
   currentFolder,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
+  const unreadCount = documents.filter((d) => d.isUnread).length;
 
   const displayDocs = documents.filter(
     (doc) =>
@@ -39,6 +40,16 @@ export const DocumentList: React.FC<DocumentListProps> = ({
     <div className="flex flex-col h-full bg-surface/50 backdrop-blur-sm border-r border-slate-800">
       {/* Search & Toolbar */}
       <div className="px-4 py-3 border-b border-slate-800 space-y-3 bg-background/60 backdrop-blur-xl z-10 sticky top-0">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+            {currentFolder}
+            {unreadCount > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[1.5rem] px-2 h-5 rounded-full bg-blue-500/10 text-[11px] font-mono text-blue-400 border border-blue-500/30">
+                {unreadCount}
+              </span>
+            )}
+          </h2>
+        </div>
         <div className="relative">
           <Search
             className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500"

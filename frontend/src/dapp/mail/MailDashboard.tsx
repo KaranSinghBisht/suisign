@@ -120,6 +120,9 @@ function mapStoredToUi(
         ? doc.messagePreview
         : doc.message || "";
 
+    const contentKind =
+      doc.contentKind ?? (doc.mimeType ? "file" : "message");
+
     return {
       id: doc.objectId || doc.blobId,
       subject: doc.subject || "Untitled document",
@@ -137,6 +140,10 @@ function mapStoredToUi(
       signedByLabels,
       signedAddresses: effectiveSigned,
       signerAddresses,
+
+      contentKind,
+      fileName: doc.fileName ?? undefined,
+      mimeType: doc.mimeType ?? undefined,
     };
   });
 }
@@ -304,6 +311,8 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
     subject: string;
     message: string;
     signerInput: string;
+    mode: "message" | "file";
+    file?: File | null;
   }) => {
     if (!currentAddress) {
       throw new Error("Connect your wallet before creating a document.");
@@ -317,6 +326,7 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
       signerInput: payload.signerInput,
       senderAddress: senderLower,
       signAndExecute: (args) => signAndExecuteTransaction(args),
+      file: payload.mode === "file" ? payload.file ?? null : null,
     });
 
     saveDocForAddress(senderLower, storedDoc);

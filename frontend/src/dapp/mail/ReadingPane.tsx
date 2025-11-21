@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { readSealSecretForDoc, SEAL_ENOACCESS } from "../../sealClient";
 import { fetchEncryptedBlob } from "../../storage";
-import { decryptMessageFromWalrus } from "../../cryptoHelpers";
+import { decryptMessageFromWalrus, fromBase64 } from "../../cryptoHelpers";
 
 const DEFAULT_EXPLORER_BASE = "https://testnet.suivision.xyz";
 
@@ -36,12 +36,57 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
   const [decryptedBody, setDecryptedBody] = React.useState<string | null>(null);
   const [decryptError, setDecryptError] = React.useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = React.useState(false);
+  const [decryptedFileUrl, setDecryptedFileUrl] = React.useState<string | null>(
+    null,
+  );
 
   React.useEffect(() => {
     setDecryptedBody(null);
     setDecryptError(null);
     setIsDecrypting(false);
+    if (decryptedFileUrl) {
+      URL.revokeObjectURL(decryptedFileUrl);
+    }
+    setDecryptedFileUrl(null);
   }, [doc?.id]);
+
+  React.useEffect(() => {
+    return () => {
+      if (decryptedFileUrl) {
+        URL.revokeObjectURL(decryptedFileUrl);
+      }
+    };
+  }, [decryptedFileUrl]);
+
+  const isFileDoc =
+    !!doc &&
+    (doc.contentKind === "file" || (!!doc.mimeType && doc.mimeType.length > 0));
+
+  async function decryptFileBytes(options: {
+    cipherB64: string;
+    keyB64: string;
+    ivB64: string;
+  }): Promise<Uint8Array> {
+    const keyBytes = new Uint8Array(fromBase64(options.keyB64));
+    const ivBytes = new Uint8Array(fromBase64(options.ivB64));
+    const cipherBytes = new Uint8Array(fromBase64(options.cipherB64));
+
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      "AES-GCM",
+      false,
+      ["decrypt"],
+    );
+
+    const plainBuf = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: ivBytes },
+      cryptoKey,
+      cipherBytes,
+    );
+
+    return new Uint8Array(plainBuf);
+  }
 
   async function handleDecrypt() {
     if (!doc || !doc.walrusBlobId || !doc.sealSecretId) {
@@ -74,19 +119,36 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
         throw new Error("Encrypted Walrus blob not found");
       }
 
-      const plaintext = await decryptMessageFromWalrus({
-        cipherB64: blob.cipherB64,
-        ivB64,
-        keyB64,
-      });
+      if (isFileDoc && doc.mimeType) {
+        const bytes = await decryptFileBytes({
+          cipherB64: blob.cipherB64,
+          keyB64,
+          ivB64,
+        });
 
-      try {
-        const parsed = JSON.parse(plaintext);
-        const body =
-          typeof parsed.message === "string" ? parsed.message : plaintext;
-        setDecryptedBody(body);
-      } catch {
-        setDecryptedBody(plaintext);
+        const normalizedBytes = new Uint8Array(bytes);
+
+        const fileBlob = new Blob([normalizedBytes], {
+          type: doc.mimeType || "application/octet-stream",
+        });
+        const url = URL.createObjectURL(fileBlob);
+        setDecryptedFileUrl(url);
+        setDecryptedBody(null);
+      } else {
+        const plaintext = await decryptMessageFromWalrus({
+          cipherB64: blob.cipherB64,
+          ivB64,
+          keyB64,
+        });
+
+        try {
+          const parsed = JSON.parse(plaintext);
+          const body =
+            typeof parsed.message === "string" ? parsed.message : plaintext;
+          setDecryptedBody(body);
+        } catch {
+          setDecryptedBody(plaintext);
+        }
       }
     } catch (err: any) {
       console.error("[SuiSign] decrypt failed", err);
@@ -195,11 +257,19 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
 
             <div className="flex flex-col gap-3">
               <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-                {decryptedBody
-                  ? decryptedBody.slice(0, 160)
-                  : doc.walrusBlobId && doc.sealSecretId
-                    ? "🔐 Encrypted message body. Decrypt to view."
-                    : doc.messagePreview || ""}
+                {isFileDoc
+                  ? decryptedFileUrl
+                    ? doc.fileName
+                      ? `🔓 Decrypted document: ${doc.fileName}`
+                      : "🔓 Decrypted document ready to view."
+                    : doc.fileName
+                      ? `🔐 Encrypted document: ${doc.fileName}`
+                      : "🔐 Encrypted document. Decrypt to download the original file."
+                  : decryptedBody
+                    ? decryptedBody.slice(0, 160)
+                    : doc.walrusBlobId && doc.sealSecretId
+                      ? "🔐 Encrypted message body. Decrypt to view."
+                      : doc.messagePreview || ""}
               </p>
               {doc.walrusBlobId && doc.sealSecretId && (
                 <button
@@ -207,7 +277,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                   disabled={isDecrypting}
                   className="mt-1 inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
                 >
-                  {isDecrypting ? "Decrypting…" : "Decrypt message"}
+                  {isDecrypting
+                    ? "Decrypting…"
+                    : isFileDoc
+                      ? "Decrypt document"
+                      : "Decrypt message"}
                 </button>
               )}
             </div>
@@ -232,10 +306,28 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                 )}
 
                 {!isDecrypting && !decryptError && (
-                  decryptedBody ??
-                  (doc.walrusBlobId && doc.sealSecretId
-                    ? "🔐 This message is encrypted. Click “Decrypt message” above to view the contents."
-                    : "Content not available for this document.")
+                  isFileDoc ? (
+                    decryptedFileUrl ? (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-500">
+                          Decrypted PDF preview — you can also download the original using the button below.
+                        </p>
+                        <iframe
+                          src={decryptedFileUrl}
+                          className="w-full h-[550px] border border-slate-200 rounded-md"
+                        />
+                      </div>
+                    ) : doc.walrusBlobId && doc.sealSecretId ? (
+                      "🔐 This is an encrypted document. Click “Decrypt document” above to view and download the original file."
+                    ) : (
+                      "Content not available for this document."
+                    )
+                  ) : (
+                    decryptedBody ??
+                    (doc.walrusBlobId && doc.sealSecretId
+                      ? "🔐 This message is encrypted. Click “Decrypt message” above to view the contents."
+                      : "Content not available for this document.")
+                  )
                 )}
               </div>
 
@@ -275,10 +367,29 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
       <div className="p-4 md:px-8 border-t border-slate-800 bg-surface/90 backdrop-blur-xl z-30 sticky bottom-0">
         <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 w-full md:w-auto">
-            <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition-colors">
-              <Download size={16} />
-              <span>Original</span>
-            </button>
+            {doc.contentKind === "file" && (
+              <button
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  if (!decryptedFileUrl) {
+                    alert(
+                      "Decrypt the document first, then you can download the original PDF.",
+                    );
+                    return;
+                  }
+                  const a = document.createElement("a");
+                  a.href = decryptedFileUrl;
+                  a.download = doc.fileName || "document.pdf";
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+                disabled={!decryptedFileUrl}
+              >
+                <Download size={16} />
+                <span>Download original</span>
+              </button>
+            )}
             <button
               className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-700 text-slate-300 text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleOpenExplorer}

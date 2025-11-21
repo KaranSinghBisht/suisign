@@ -86,6 +86,11 @@ export type StoredDocMetadata = {
   status?: StoredDocStatus;
   signedAddresses?: string[];
   senderAddress?: string;
+
+  // Content metadata
+  contentKind?: "message" | "file";
+  fileName?: string;
+  mimeType?: string;
 };
 
 const DOCS_KEY_PREFIX = "suisign_docs_";
@@ -148,6 +153,10 @@ export function saveDocForAddress(
     status: doc.status ?? "pending",
     signedAddresses: doc.signedAddresses ?? [],
     senderAddress: doc.senderAddress ? doc.senderAddress.toLowerCase() : "",
+
+    contentKind: doc.contentKind ?? (doc.mimeType ? "file" : "message"),
+    fileName: doc.fileName ?? "",
+    mimeType: doc.mimeType ?? "",
   };
 
   filtered.push(normalized);

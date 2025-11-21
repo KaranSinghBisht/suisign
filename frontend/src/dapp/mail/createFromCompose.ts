@@ -2,10 +2,16 @@
 import { Transaction } from "@mysten/sui/transactions";
 import { SuiClient, getFullnodeUrl } from "@mysten/sui/client";
 import { resolveHandlesOrAddresses } from "../../handleRegistry";
-import { encryptMessageAndUploadToWalrus } from "../../cryptoHelpers";
-import type { EncryptedWalrusResult } from "../../cryptoHelpers";
+import {
+  encryptMessageAndUploadToWalrus,
+  type EncryptedWalrusResult,
+  toBase64,
+} from "../../cryptoHelpers";
+import {
+  storeEncryptedBlobToWalrus,
+  type StoredDocMetadata,
+} from "../../storage";
 import { createSealSecretForDoc } from "../../sealClient";
-import type { StoredDocMetadata } from "../../storage";
 
 const PACKAGE_ID = import.meta.env.VITE_SUISIGN_PACKAGE_ID as string;
 
@@ -20,6 +26,8 @@ type CreateComposeInput = {
   signerInput: string;
   senderAddress: string;
   signAndExecute: SignAndExecuteFn;
+
+  file?: File | null;
 };
 
 // --- helper: fetch tx details from a fullnode using the digest --- //
@@ -139,6 +147,61 @@ function extractDocumentId(result: any): string {
   return fallbackId ?? "";
 }
 
+type EncryptedFileWalrusResult = EncryptedWalrusResult & {
+  fileName: string;
+  mimeType: string;
+};
+
+async function encryptFileToWalrus(
+  file: File,
+): Promise<EncryptedFileWalrusResult> {
+  const buffer = await file.arrayBuffer();
+  const plainBytes = new Uint8Array(buffer);
+
+  const keyBytes = new Uint8Array(32);
+  const ivBytes = new Uint8Array(12);
+  crypto.getRandomValues(keyBytes);
+  crypto.getRandomValues(ivBytes);
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    "AES-GCM",
+    false,
+    ["encrypt", "decrypt"],
+  );
+
+  const cipherBuf = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: ivBytes },
+    cryptoKey,
+    plainBytes,
+  );
+
+  const cipherBytes = new Uint8Array(cipherBuf);
+  const cipherB64 = toBase64(cipherBytes);
+
+  const walrusMeta = await storeEncryptedBlobToWalrus({
+    cipherB64,
+    epochs: 1,
+  });
+
+  const hashBuf = await crypto.subtle.digest("SHA-256", plainBytes);
+  const hashBytes = new Uint8Array(hashBuf);
+  const hashHex = Array.from(hashBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  return {
+    blobId: walrusMeta.blobId,
+    walrusBlobObjectId: walrusMeta.objectId,
+    hashHex,
+    keyB64: toBase64(keyBytes),
+    ivB64: toBase64(ivBytes),
+    fileName: file.name,
+    mimeType: file.type || "application/pdf",
+  };
+}
+
 // --- main entry point --- //
 
 export async function createDocumentFromCompose(
@@ -177,12 +240,24 @@ export async function createDocumentFromCompose(
   signerAddresses = signerAddresses.map((addr) => addr.toLowerCase());
   console.log("[SuiSign] signerInput", rawPieces, "resolved", signerAddresses);
 
-  const encrypted: EncryptedWalrusResult =
-    await encryptMessageAndUploadToWalrus({
+  let encrypted: EncryptedWalrusResult;
+  let contentKind: "message" | "file" = "message";
+  let fileName: string | undefined;
+  let mimeType: string | undefined;
+
+  if (input.file) {
+    contentKind = "file";
+    const encFile = await encryptFileToWalrus(input.file);
+    encrypted = encFile;
+    fileName = encFile.fileName;
+    mimeType = encFile.mimeType;
+  } else {
+    encrypted = await encryptMessageAndUploadToWalrus({
       subject: input.subject,
       message: input.message,
       senderAddress: input.senderAddress,
     });
+  }
 
   const allAddresses = Array.from(
     new Set([senderAddrLower, ...signerAddresses]),
@@ -247,13 +322,19 @@ export async function createDocumentFromCompose(
     subject: input.subject,
     message: "",
     messagePreview:
-      input.message.length > 160
-        ? `${input.message.slice(0, 157)}…`
-        : input.message,
+      contentKind === "message"
+        ? input.message.length > 160
+          ? `${input.message.slice(0, 157)}…`
+          : input.message
+        : `[Encrypted document] ${fileName ?? "attachment"}`,
     createdAt: new Date().toISOString(),
     signers: signerAddresses,
     signedAddresses: [],
     senderAddress: input.senderAddress.toLowerCase(),
     sealSecretId,
+
+    contentKind,
+    fileName: fileName ?? "",
+    mimeType: mimeType ?? "",
   };
 }

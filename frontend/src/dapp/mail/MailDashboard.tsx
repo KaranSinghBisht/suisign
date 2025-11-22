@@ -6,7 +6,6 @@ import { Sidebar } from "./Sidebar";
 import { DocumentList } from "./DocumentList";
 import { ReadingPane } from "./ReadingPane";
 import { UiDocument, FolderType } from "./types";
-import { MOCK_DOCUMENTS } from "./constants";
 import {
   loadDocsForAddress,
   saveDocForAddress,
@@ -16,6 +15,7 @@ import {
   type StoredDocStatus,
 } from "../../storage";
 import { getHandleForAddress } from "../../handleRegistry";
+import { stripHtml } from "../../utils/text";
 import { ComposePanel } from "./ComposePanel";
 import { createDocumentFromCompose } from "./createFromCompose";
 import { signDocumentOnChain } from "./signDocument";
@@ -117,10 +117,12 @@ function mapStoredToUi(
 
     const signedByLabels = buildSignedByLabels(effectiveSigned);
 
-    const safePreview =
+    const rawPreview =
       typeof doc.messagePreview === "string" && doc.messagePreview.length > 0
         ? doc.messagePreview
         : doc.message || "";
+
+    const safePreview = stripHtml(rawPreview);
 
     const contentKind =
       doc.contentKind ?? (doc.mimeType ? "file" : "message");
@@ -135,6 +137,7 @@ function mapStoredToUi(
       status,
       isUnread: true,
       messagePreview: safePreview,
+      message: doc.message || "",
       walrusBlobId: doc.blobId,
       walrusHashHex: doc.hashHex,
       sealSecretId: doc.sealSecretId || undefined,
@@ -577,56 +580,61 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
             />
           </div>
 
-          {/* Reading Pane Column */}
+          {/* Right column: reading vs composing */}
           <div
             className={`
               flex-1 relative
-              ${!selectedDocId ? "hidden md:flex" : "flex"}
+              ${!selectedDocId && !isComposeOpen ? "hidden md:flex" : "flex"}
             `}
           >
-            {selectedDocId && (
-              <button
-                onClick={() => setSelectedDocId(null)}
-                className="md:hidden absolute top-4 left-4 z-20 p-2 bg-slate-800 rounded-full text-white shadow-lg"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
-              </button>
-            )}
+            {isComposeOpen ? (
+              <ComposePanel
+                isOpen={true}
+                onClose={() => setIsComposeOpen(false)}
+                onCreate={handleCreateFromCompose}
+                currentUserLabel={
+                  currentAddress ? formatAddressLabel(currentAddress) : undefined
+                }
+                variant="inline"
+              />
+            ) : (
+              <>
+                {selectedDocId && (
+                  <button
+                    onClick={() => setSelectedDocId(null)}
+                    className="md:hidden absolute top-4 left-4 z-20 p-2 bg-slate-800 rounded-full text-white shadow-lg"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </button>
+                )}
 
-            <ReadingPane
-              doc={selectedDoc}
-              onSign={handleSign}
-              currentAddress={currentAddress ?? null}
-              signPersonalMessage={
-                signPersonalMessage
-                  ? async ({ message }) => signPersonalMessage({ message })
-                  : undefined
-              }
-            />
+                <ReadingPane
+                  doc={selectedDoc}
+                  onSign={handleSign}
+                  currentAddress={currentAddress ?? null}
+                  signPersonalMessage={
+                    signPersonalMessage
+                      ? async ({ message }) => signPersonalMessage({ message })
+                      : undefined
+                  }
+                />
+              </>
+            )}
           </div>
         </div>
       </div>
-
-      <ComposePanel
-        isOpen={isComposeOpen}
-        onClose={() => setIsComposeOpen(false)}
-        onCreate={handleCreateFromCompose}
-        currentUserLabel={
-          currentAddress ? formatAddressLabel(currentAddress) : undefined
-        }
-      />
     </>
   );
 };

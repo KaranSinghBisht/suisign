@@ -12,8 +12,9 @@ export interface UiDocument {
   timestamp: number; // for sorting
   status: DocStatus;
   isUnread: boolean;
-  messagePreview?: string | null;
-  // Body is not persisted in UI model; require decrypt to view.
+  messagePreview: string; // plain-text preview
+  message?: string; // full body (HTML or plain) for unencrypted docs
+  // Body is not persisted in UI model; require decrypt to view encrypted content.
   contentBody?: null;
   walrusBlobId?: string; // Walrus blob id
   walrusHashHex?: string;

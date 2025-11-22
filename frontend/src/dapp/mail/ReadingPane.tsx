@@ -15,6 +15,7 @@ import {
 import { readSealSecretForDoc, SEAL_ENOACCESS } from "../../sealClient";
 import { fetchEncryptedBlob } from "../../storage";
 import { decryptMessageFromWalrus, fromBase64 } from "../../cryptoHelpers";
+import { stripHtml } from "../../utils/text";
 
 const DEFAULT_EXPLORER_BASE = "https://testnet.suivision.xyz";
 
@@ -191,6 +192,59 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
     window.open(explorerUrl, "_blank", "noopener,noreferrer");
   }
 
+  function renderHtmlOrFallback(html: string) {
+    const text = stripHtml(html);
+    if (!text) return null;
+
+    return (
+      <div
+        className="prose prose-slate prose-sm max-w-none"
+        // TipTap output is controlled by the app, so this is acceptable for now.
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  function renderMessageContent() {
+    if (!doc) return null;
+
+    if (isFileDoc) {
+      if (decryptedFileUrl) {
+        return (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Decrypted PDF preview — you can also download the original using the button below.
+            </p>
+            <iframe
+              src={decryptedFileUrl}
+              className="w-full h-[550px] border border-slate-200 rounded-md"
+            />
+          </div>
+        );
+      }
+
+      if (doc.walrusBlobId && doc.sealSecretId) {
+        return "🔐 This is an encrypted document. Click “Decrypt document” above to view and download the original file.";
+      }
+
+      return "Content not available for this document.";
+    }
+
+    const htmlToRender =
+      decryptedBody ??
+      (doc.walrusBlobId && doc.sealSecretId ? "" : doc.message || "");
+
+    if (htmlToRender) {
+      return renderHtmlOrFallback(htmlToRender);
+    }
+
+    if (doc.walrusBlobId && doc.sealSecretId) {
+      return "🔐 This message is encrypted. Click “Decrypt message” above to view the contents.";
+    }
+
+    return "Content not available for this document.";
+  }
+
   if (!doc) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 select-none bg-background">
@@ -285,10 +339,10 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                       ? `🔐 Encrypted document: ${doc.fileName}`
                       : "🔐 Encrypted document. Decrypt to download the original file."
                   : decryptedBody
-                    ? decryptedBody.slice(0, 160)
+                    ? stripHtml(decryptedBody).slice(0, 160)
                     : doc.walrusBlobId && doc.sealSecretId
                       ? "🔐 Encrypted message body. Decrypt to view."
-                      : doc.messagePreview || ""}
+                      : doc.messagePreview}
               </p>
               {doc.walrusBlobId && doc.sealSecretId && (
                 <button
@@ -324,30 +378,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                   </span>
                 )}
 
-                {!isDecrypting && !decryptError && (
-                  isFileDoc ? (
-                    decryptedFileUrl ? (
-                      <div className="space-y-4">
-                        <p className="text-xs text-slate-500">
-                          Decrypted PDF preview — you can also download the original using the button below.
-                        </p>
-                        <iframe
-                          src={decryptedFileUrl}
-                          className="w-full h-[550px] border border-slate-200 rounded-md"
-                        />
-                      </div>
-                    ) : doc.walrusBlobId && doc.sealSecretId ? (
-                      "🔐 This is an encrypted document. Click “Decrypt document” above to view and download the original file."
-                    ) : (
-                      "Content not available for this document."
-                    )
-                  ) : (
-                    decryptedBody ??
-                    (doc.walrusBlobId && doc.sealSecretId
-                      ? "🔐 This message is encrypted. Click “Decrypt message” above to view the contents."
-                      : "Content not available for this document.")
-                  )
-                )}
+                {!isDecrypting && !decryptError && renderMessageContent()}
               </div>
 
               <div className="mt-16 pt-8 border-t border-slate-300 flex justify-between items-end">

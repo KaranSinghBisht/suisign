@@ -1,4 +1,5 @@
 import React from "react";
+import { draftAgreementWithAI } from "../../ai/draftAgreement";
 
 type ComposeMode = "message" | "file";
 
@@ -12,19 +13,24 @@ interface ComposePanelProps {
     mode: ComposeMode;
     file?: File | null;
   }) => void | Promise<void>;
+  /** Optional: label/handle of the connected wallet (e.g. kryptos.sui or 0x4a…89b2) */
+  currentUserLabel?: string;
 }
 
 export const ComposePanel: React.FC<ComposePanelProps> = ({
   isOpen,
   onClose,
   onCreate,
+  currentUserLabel,
 }) => {
   const [subject, setSubject] = React.useState("");
   const [signerInput, setSignerInput] = React.useState("");
   const [message, setMessage] = React.useState("");
+  const [aiInstructions, setAiInstructions] = React.useState("");
   const [mode, setMode] = React.useState<ComposeMode>("message");
   const [file, setFile] = React.useState<File | null>(null);
   const [isCreating, setIsCreating] = React.useState(false);
+  const [isDrafting, setIsDrafting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -34,8 +40,10 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
       setMessage("");
       setFile(null);
       setMode("message");
-      setIsCreating(false);  
-      setError(null);        
+      setIsCreating(false);
+      setIsDrafting(false);
+      setAiInstructions("");
+      setError(null);
     }
   }, [isOpen]);
 
@@ -64,6 +72,46 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
     }
 
     setFile(f);
+  };
+
+  const handleDraftWithAI = async () => {
+    if (isDrafting || mode !== "message") return;
+
+    const trimmedSubject = subject.trim();
+    const trimmedSigners = signerInput.trim();
+    const trimmedMessage = message.trim();
+
+    if (!trimmedSubject) {
+      setError("Add a subject before asking AI to draft.");
+      return;
+    }
+    if (!trimmedSigners) {
+      setError("Add at least one signer (handle or address) before using AI.");
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsDrafting(true);
+
+      const draft = await draftAgreementWithAI({
+        subject: trimmedSubject,
+        signerInput: trimmedSigners,
+        existingMessage: trimmedMessage || undefined,
+        instructions: aiInstructions || undefined,
+        initiatorLabel: currentUserLabel,
+      });
+
+      setMessage(draft);
+    } catch (err: any) {
+      console.error("[SuiSign] AI draft failed", err);
+      setError(
+        err?.message ??
+          "Something went wrong while asking AI to draft the message.",
+      );
+    } finally {
+      setIsDrafting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -193,10 +241,24 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
               Everyone listed here will be able to decrypt this document (via
               Seal).
             </p>
+            {mode === "message" && (
+              <div className="mt-3 space-y-1">
+                <label className="text-[11px] font-medium text-slate-300">
+                  Optional AI instructions
+                </label>
+                <textarea
+                  className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]"
+                  placeholder="Tell the AI what this agreement should cover, tone, special clauses, etc."
+                  value={aiInstructions}
+                  onChange={(e) => {
+                    setAiInstructions(e.target.value);
+                    if (error) setError(null);
+                  }}
+                />
+              </div>
+            )}
             {error && (
-              <p className="text-xs text-red-400 mt-1">
-                {error}
-              </p>
+              <p className="text-xs text-red-400 mt-1">{error}</p>
             )}
           </div>
 
@@ -208,7 +270,7 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
               </label>
               <textarea
                 className="w-full text-sm px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[140px]"
-                placeholder="Write the contents of the document here. This will be encrypted before leaving your browser."
+                placeholder="Write the contents of the document here, or let AI draft something for you."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
               />
@@ -245,6 +307,17 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
             >
               Cancel
             </button>
+            {mode === "message" && (
+              <button
+                type="button"
+                onClick={handleDraftWithAI}
+                disabled={isDrafting}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold border border-blue-500/60 text-blue-300 hover:bg-blue-600/10 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                <span>✨</span>
+                <span>{isDrafting ? "Drafting…" : "Draft with AI"}</span>
+              </button>
+            )}
             <button
               type="submit"
               disabled={isCreating}

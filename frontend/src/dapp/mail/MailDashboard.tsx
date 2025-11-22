@@ -623,6 +623,9 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
         isOpen={isComposeOpen}
         onClose={() => setIsComposeOpen(false)}
         onCreate={handleCreateFromCompose}
+        currentUserLabel={
+          currentAddress ? formatAddressLabel(currentAddress) : undefined
+        }
       />
     </>
   );

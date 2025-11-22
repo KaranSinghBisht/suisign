@@ -5,8 +5,6 @@ import { Badge } from "./Badge";
 import {
   Download,
   ExternalLink,
-  Share2,
-  MoreHorizontal,
   ShieldCheck,
   FileCheck,
   XCircle,
@@ -281,21 +279,6 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
             <span>to</span>
             <span className="text-slate-300">{doc.toLabels.join(", ")}</span>
           </div>
-        </div>
-
-        <div className="hidden md:flex items-center gap-2">
-          <button
-            className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-            title="Share"
-          >
-            <Share2 size={18} />
-          </button>
-          <button
-            className="p-2 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
-            title="More options"
-          >
-            <MoreHorizontal size={18} />
-          </button>
         </div>
       </div>
 

@@ -1,7 +1,6 @@
-// /frontend/src/dapp/mail/DocumentList.tsx
 import React, { useState } from "react";
 import { UiDocument, FolderType } from "./types";
-import { Search, Filter, RefreshCw } from "lucide-react";
+import { Search } from "lucide-react";
 import { Badge } from "./Badge";
 
 interface DocumentListProps {
@@ -62,17 +61,6 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-        </div>
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span className="font-medium text-slate-400">{currentFolder}</span>
-          <div className="flex items-center gap-2">
-            <button className="hover:text-slate-300 transition-colors">
-              <Filter size={14} />
-            </button>
-            <button className="hover:text-slate-300 transition-colors">
-              <RefreshCw size={14} />
-            </button>
-          </div>
         </div>
       </div>
 

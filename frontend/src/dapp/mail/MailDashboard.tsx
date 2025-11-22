@@ -5,7 +5,12 @@ import { useSignAndExecuteTransaction } from "@mysten/dapp-kit";
 import { Sidebar } from "./Sidebar";
 import { DocumentList } from "./DocumentList";
 import { ReadingPane } from "./ReadingPane";
-import { UiDocument, FolderType } from "./types";
+import {
+  UiDocument,
+  FolderType,
+  ComposeMode,
+  type DocumentMetadata,
+} from "./types";
 import {
   loadDocsForAddress,
   saveDocForAddress,
@@ -13,6 +18,8 @@ import {
   updateDocStatusForAddress,
   updateDocSignedAddressesForAddress,
   type StoredDocStatus,
+  updateDocBlobForAddress,
+  storeEncryptedBlobToWalrus,
 } from "../../storage";
 import { getHandleForAddress } from "../../handleRegistry";
 import { stripHtml } from "../../utils/text";
@@ -20,6 +27,8 @@ import { ComposePanel } from "./ComposePanel";
 import { createDocumentFromCompose } from "./createFromCompose";
 import { signDocumentOnChain } from "./signDocument";
 import { fetchDocumentFromChain } from "../../chain/documentQueries";
+import { encryptBytesWithExistingKey } from "../../cryptoHelpers";
+import { updateDocumentBlobOnChain } from "./updateDocumentBlobOnChain";
 
 interface MailDashboardProps {
   currentAddress?: string | null;
@@ -127,6 +136,28 @@ function mapStoredToUi(
     const contentKind =
       doc.contentKind ?? (doc.mimeType ? "file" : "message");
 
+    const requiresHandSignature =
+      doc.metadata?.requiresHandSignature ??
+      doc.requiresHandSignature ??
+      false;
+
+    const metadata: DocumentMetadata =
+      doc.metadata ?? {
+        kind: contentKind === "file" ? "pdf" : "richtext",
+        subject: doc.subject ?? "",
+        walrusBlobId: doc.blobId ?? "",
+        requiresHandSignature,
+      };
+
+    const isPdf = metadata.kind === "pdf" || contentKind === "file";
+
+    if (isPdf) {
+      tags.push("PDF");
+    }
+    if (requiresHandSignature) {
+      tags.push("Hand-sign");
+    }
+
     return {
       id: doc.objectId || doc.blobId,
       subject: doc.subject || "Untitled document",
@@ -150,6 +181,7 @@ function mapStoredToUi(
       contentKind,
       fileName: doc.fileName ?? undefined,
       mimeType: doc.mimeType ?? undefined,
+      metadata,
     };
   });
 }
@@ -253,6 +285,17 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
           signerAddrs,
         );
 
+        const chainBlobId = onChain.walrusBlobId ?? doc.blobId;
+        const chainHashHex = onChain.walrusHashHex ?? doc.hashHex;
+        if (chainBlobId && chainBlobId !== doc.blobId) {
+          updateDocBlobForAddress(
+            addrLower,
+            doc.objectId,
+            chainBlobId,
+            chainHashHex,
+          );
+        }
+
         updates.push({
           objectId: doc.objectId,
           status,
@@ -337,8 +380,9 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
     subject: string;
     message: string;
     signerInput: string;
-    mode: "message" | "file";
+    mode: ComposeMode;
     file?: File | null;
+    requiresHandSignature: boolean;
   }) => {
     if (!currentAddress) {
       throw new Error("Connect your wallet before creating a document.");
@@ -352,7 +396,9 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
       signerInput: payload.signerInput,
       senderAddress: senderLower,
       signAndExecute: (args) => signAndExecuteTransaction(args),
-      file: payload.mode === "file" ? payload.file ?? null : null,
+      file: payload.mode === "pdf" ? payload.file ?? null : null,
+      mode: payload.mode,
+      requiresHandSignature: payload.requiresHandSignature,
     });
 
     saveDocForAddress(senderLower, storedDoc);
@@ -508,6 +554,72 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
     }
   };
 
+  const handlePdfSigned = React.useCallback(
+    async (args: {
+      docId: string;
+      signedBytes: Uint8Array;
+      keyB64: string;
+      ivB64: string;
+    }) => {
+      if (!currentAddress) {
+        console.warn(
+          "[SuiSign] No connected wallet; cannot persist burned PDF",
+        );
+        return;
+      }
+
+      try {
+        const { cipherB64, hashHex } = await encryptBytesWithExistingKey(
+          args.signedBytes,
+          args.keyB64,
+          args.ivB64,
+        );
+
+        const walrusMeta = await storeEncryptedBlobToWalrus({
+          cipherB64,
+          epochs: 5,
+        });
+
+        await updateDocumentBlobOnChain({
+          docObjectId: args.docId,
+          newBlobId: walrusMeta.blobId,
+          newHashHex: hashHex,
+          signAndExecute: (txArgs) => signAndExecuteTransaction(txArgs),
+        });
+
+        updateDocBlobForAddress(
+          currentAddress.toLowerCase(),
+          args.docId,
+          walrusMeta.blobId,
+          hashHex,
+        );
+
+        setDocuments((prev) =>
+          prev.map((d) =>
+            d.id === args.docId
+              ? {
+                  ...d,
+                  walrusBlobId: walrusMeta.blobId,
+                  walrusHashHex: hashHex,
+                  metadata: {
+                    ...(d.metadata ?? {
+                      kind: "pdf",
+                      subject: d.subject ?? "",
+                      walrusBlobId: walrusMeta.blobId,
+                    }),
+                    walrusBlobId: walrusMeta.blobId,
+                  },
+                }
+              : d,
+          ),
+        );
+      } catch (err) {
+        console.error("[SuiSign] Failed to persist burned PDF", err);
+      }
+    },
+    [currentAddress, signAndExecuteTransaction],
+  );
+
   /* ---------- render ---------- */
 
   return (
@@ -623,6 +735,7 @@ export const MailDashboard: React.FC<MailDashboardProps> = ({
                 <ReadingPane
                   doc={selectedDoc}
                   onSign={handleSign}
+                  onPdfSigned={handlePdfSigned}
                   currentAddress={currentAddress ?? null}
                   signPersonalMessage={
                     signPersonalMessage

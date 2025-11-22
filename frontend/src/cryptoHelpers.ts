@@ -150,3 +150,39 @@ export async function decryptMessageFromWalrus(input: {
 	const decoder = new TextDecoder();
 	return decoder.decode(new Uint8Array(plaintextBuffer));
 }
+
+// Encrypt *given* bytes with an existing AES-GCM key+iv (both base64).
+export async function encryptBytesWithExistingKey(
+	plainBytes: Uint8Array,
+	keyB64: string,
+	ivB64: string,
+): Promise<{ cipherB64: string; hashHex: string }> {
+	const keyBytes = fromBase64(keyB64);
+	const ivBytes = fromBase64(ivB64);
+
+	// Import AES key
+	const cryptoKey = await crypto.subtle.importKey(
+		"raw",
+		keyBytes.buffer as ArrayBuffer,
+		{ name: "AES-GCM", length: 256 },
+		false,
+		["encrypt"],
+	);
+
+	// AES-GCM in TS DOM wants ArrayBuffer
+	const ivBuffer = ivBytes.buffer as ArrayBuffer;
+
+	const cipherBuf = await crypto.subtle.encrypt(
+		{ name: "AES-GCM", iv: ivBuffer },
+		cryptoKey,
+		plainBytes.buffer as ArrayBuffer,
+	);
+
+	const cipherBytes = new Uint8Array(cipherBuf);
+	const cipherB64 = toBase64(cipherBytes);
+
+	// Hash of plaintext
+	const hashHex = await sha256(plainBytes.buffer as ArrayBuffer);
+
+	return { cipherB64, hashHex };
+}

@@ -13,12 +13,20 @@ import { readSealSecretForDoc, SEAL_ENOACCESS } from "../../sealClient";
 import { fetchEncryptedBlob } from "../../storage";
 import { decryptMessageFromWalrus, fromBase64 } from "../../cryptoHelpers";
 import { stripHtml } from "../../utils/text";
+import { PDFDocument } from "pdf-lib";
+import { PdfSignModal } from "./PdfSignModal";
 
 const DEFAULT_EXPLORER_BASE = "https://testnet.suivision.xyz";
 
 interface ReadingPaneProps {
   doc: UiDocument | null;
   onSign?: (docId: string) => Promise<void> | void;
+  onPdfSigned?: (args: {
+    docId: string;
+    signedBytes: Uint8Array;
+    keyB64: string;
+    ivB64: string;
+  }) => Promise<void> | void;
   currentAddress?: string | null;
   signPersonalMessage?: (input: {
     message: Uint8Array;
@@ -28,6 +36,7 @@ interface ReadingPaneProps {
 export const ReadingPane: React.FC<ReadingPaneProps> = ({
   doc,
   onSign,
+  onPdfSigned,
   currentAddress,
   signPersonalMessage,
 }) => {
@@ -38,24 +47,44 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
   const [decryptedFileUrl, setDecryptedFileUrl] = React.useState<string | null>(
     null,
   );
+  const [currentPdfBytes, setCurrentPdfBytes] =
+    React.useState<Uint8Array | null>(null);
+  const [currentPdfUrl, setCurrentPdfUrl] = React.useState<string | null>(null);
+  const [isSignModalOpen, setIsSignModalOpen] = React.useState(false);
+  const [localSignatures, setLocalSignatures] = React.useState<
+    Record<string, string>
+  >({});
+  const [pdfKeyB64, setPdfKeyB64] = React.useState<string | null>(null);
+  const [pdfIvB64, setPdfIvB64] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setDecryptedBody(null);
     setDecryptError(null);
     setIsDecrypting(false);
+    setCurrentPdfBytes(null);
+    setPdfKeyB64(null);
+    setPdfIvB64(null);
     if (decryptedFileUrl) {
       URL.revokeObjectURL(decryptedFileUrl);
     }
+    if (currentPdfUrl) {
+      URL.revokeObjectURL(currentPdfUrl);
+    }
     setDecryptedFileUrl(null);
-  }, [doc?.id]);
+    setCurrentPdfUrl(null);
+    setIsSignModalOpen(false);
+  }, [doc?.id, doc?.walrusBlobId]);
 
   React.useEffect(() => {
     return () => {
       if (decryptedFileUrl) {
         URL.revokeObjectURL(decryptedFileUrl);
       }
+      if (currentPdfUrl) {
+        URL.revokeObjectURL(currentPdfUrl);
+      }
     };
-  }, [decryptedFileUrl]);
+  }, [decryptedFileUrl, currentPdfUrl]);
 
   const meLower = (currentAddress ?? "").toLowerCase();
   const signerAddrs = doc?.signerAddresses ?? [];
@@ -78,6 +107,31 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
   const isFileDoc =
     !!doc &&
     (doc.contentKind === "file" || (!!doc.mimeType && doc.mimeType.length > 0));
+
+  const isPdfDoc =
+    doc?.metadata?.kind === "pdf" ||
+    doc?.mimeType === "application/pdf" ||
+    (doc?.fileName || "").toLowerCase().endsWith(".pdf");
+  const requiresHandSignature = Boolean(doc?.metadata?.requiresHandSignature);
+
+  React.useEffect(() => {
+    if (!doc?.id) {
+      setLocalSignatures({});
+      return;
+    }
+    const storageKey = `suisign-local-sigs-${doc.id}`;
+    const existing = window.localStorage.getItem(storageKey);
+    if (!existing) {
+      setLocalSignatures({});
+      return;
+    }
+    try {
+      const parsed = JSON.parse(existing) as Record<string, string>;
+      setLocalSignatures(parsed || {});
+    } catch {
+      setLocalSignatures({});
+    }
+  }, [doc?.id]);
 
   async function decryptFileBytes(options: {
     cipherB64: string;
@@ -131,6 +185,9 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
         },
       );
 
+      setPdfKeyB64(keyB64);
+      setPdfIvB64(ivB64);
+
       const blob = await fetchEncryptedBlob(doc.walrusBlobId);
       if (!blob) {
         throw new Error("Encrypted Walrus blob not found");
@@ -144,12 +201,14 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
         });
 
         const normalizedBytes = new Uint8Array(bytes);
+        setCurrentPdfBytes(normalizedBytes);
 
         const fileBlob = new Blob([normalizedBytes], {
           type: doc.mimeType || "application/octet-stream",
         });
         const url = URL.createObjectURL(fileBlob);
         setDecryptedFileUrl(url);
+        setCurrentPdfUrl(url);
         setDecryptedBody(null);
       } else {
         const plaintext = await decryptMessageFromWalrus({
@@ -205,6 +264,23 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
   function renderMessageContent() {
     if (!doc) return null;
 
+    if (isPdfDoc) {
+      if (currentPdfUrl) {
+        return (
+          <iframe
+            src={currentPdfUrl}
+            className="w-full h-[550px] border border-slate-200 rounded-md"
+          />
+        );
+      }
+
+      if (doc.walrusBlobId && doc.sealSecretId) {
+        return "This PDF is encrypted. Click “Decrypt document” above to view and sign.";
+      }
+
+      return "PDF content not available.";
+    }
+
     if (isFileDoc) {
       if (decryptedFileUrl) {
         return (
@@ -240,6 +316,103 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
     }
 
     return "Content not available for this document.";
+  }
+
+  async function embedSignatureIntoPdf(
+    pdfBytes: Uint8Array,
+    signatureDataUrl: string,
+    pos: {
+      xNorm: number;
+      yNorm: number;
+      wNorm: number;
+      hNorm: number;
+    },
+  ): Promise<ArrayBuffer> {
+    const pdfDoc = await PDFDocument.load(pdfBytes.slice());
+    const pngBytes = await fetch(signatureDataUrl).then((res) =>
+      res.arrayBuffer(),
+    );
+    const pngImage = await pdfDoc.embedPng(pngBytes);
+
+    const pages = pdfDoc.getPages();
+    const firstPage = pages[0];
+    const { width, height } = firstPage.getSize();
+
+    const drawWidth = pos.wNorm * width;
+    const drawHeight = pos.hNorm * height;
+    const x = pos.xNorm * width;
+    const y = height - pos.yNorm * height - drawHeight;
+
+    firstPage.drawImage(pngImage, {
+      x,
+      y,
+      width: drawWidth,
+      height: drawHeight,
+      opacity: 0.95,
+    });
+
+    const outBytes = await pdfDoc.save();
+    return outBytes.buffer as ArrayBuffer;
+  }
+
+  type PdfSignArgs = {
+    dataUrl: string;
+    position: { xNorm: number; yNorm: number; wNorm: number; hNorm: number };
+  };
+
+  async function handlePdfSign({ dataUrl, position }: PdfSignArgs) {
+    if (!doc?.id || !currentAddress || !canSign) return;
+    if (!currentPdfBytes) {
+      console.error("[SuiSign] no currentPdfBytes to sign");
+      return;
+    }
+    try {
+      const signedBuffer = await embedSignatureIntoPdf(
+        currentPdfBytes,
+        dataUrl,
+        position,
+      );
+      const signedBytes = new Uint8Array(signedBuffer);
+
+      if (onSign) {
+        await onSign(doc.id);
+      }
+
+    if (onPdfSigned && pdfKeyB64 && pdfIvB64) {
+      await onPdfSigned({
+        docId: doc.id,
+        signedBytes,
+        keyB64: pdfKeyB64,
+        ivB64: pdfIvB64,
+      });
+    } else if (onPdfSigned && (!pdfKeyB64 || !pdfIvB64)) {
+      console.warn(
+        "[SuiSign] onPdfSigned provided but AES key/iv not available; cannot persist burned PDF",
+      );
+    }
+
+      const addrLower = currentAddress.toLowerCase();
+      const storageKey = `suisign-local-sigs-${doc.id}`;
+      const next = { ...localSignatures, [addrLower]: dataUrl };
+      window.localStorage.setItem(storageKey, JSON.stringify(next));
+      setLocalSignatures(next);
+
+      if (currentPdfUrl) {
+        URL.revokeObjectURL(currentPdfUrl);
+      }
+
+      const blob = new Blob([signedBytes], {
+        type: doc.mimeType || "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      setCurrentPdfBytes(signedBytes);
+      setCurrentPdfUrl(url);
+      setDecryptedFileUrl(url);
+    } catch (err) {
+      console.error("[SuiSign] pdf sign failed", err);
+    } finally {
+      setIsSignModalOpen(false);
+    }
   }
 
   if (!doc) {
@@ -311,6 +484,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
             </div>
 
             <div className="flex flex-col gap-3">
+              {requiresHandSignature && (
+                <p className="text-xs text-amber-300">
+                  Requires handwritten signature from all parties.
+                </p>
+              )}
               <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
                 {isFileDoc
                   ? decryptedFileUrl
@@ -419,7 +597,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                 disabled={!decryptedFileUrl}
               >
                 <Download size={16} />
-                <span>Download original</span>
+                <span>
+                  {requiresHandSignature
+                    ? "Download signed PDF"
+                    : "Download original"}
+                </span>
               </button>
             )}
             <button
@@ -438,7 +620,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto">
-            {doc.status === "pending" && (
+            {doc.status === "pending" && !isPdfDoc && (
               <button
                 className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all
         ${
@@ -457,6 +639,40 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                 <span>Sign Document</span>
               </button>
             )}
+
+            {doc.status === "pending" && isPdfDoc && requiresHandSignature && (
+              <button
+                className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all
+        ${
+          canSign && currentPdfBytes
+            ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-blue-500/25 hover:shadow-blue-500/40 hover:scale-[1.02]"
+            : "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+        }`}
+                disabled={!canSign || !currentPdfBytes}
+                title={
+                  !canSign
+                    ? signDisabledReason || undefined
+                    : !currentPdfBytes
+                      ? "Decrypt the document first to sign."
+                      : undefined
+                }
+                onClick={() => {
+                  if (!canSign || !currentPdfBytes) return;
+                  setIsSignModalOpen(true);
+                }}
+              >
+                <PenTool size={18} />
+                <span>Draw &amp; Sign PDF</span>
+              </button>
+            )}
+
+            {doc.status === "pending" && isPdfDoc && !requiresHandSignature && (
+              <span className="text-xs text-slate-400">
+                This PDF does not require handwritten signatures. Use wallet
+                signing.
+              </span>
+            )}
+
             {(doc.status === "signed" || doc.status === "completed") && (
               <button className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 cursor-default">
                 <FileCheck size={18} />
@@ -466,6 +682,20 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
           </div>
         </div>
       </div>
+
+      {isSignModalOpen && isPdfDoc && requiresHandSignature && currentPdfBytes && (
+        <PdfSignModal
+          pdfBytes={currentPdfBytes}
+          canSign={canSign}
+          existingSignatureDataUrl={
+            currentAddress
+              ? localSignatures[currentAddress.toLowerCase()]
+              : undefined
+          }
+          onClose={() => setIsSignModalOpen(false)}
+          onSigned={handlePdfSign}
+        />
+      )}
     </div>
   );
 };

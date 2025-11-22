@@ -12,6 +12,11 @@ import {
   type StoredDocMetadata,
 } from "../../storage";
 import { createSealSecretForDoc } from "../../sealClient";
+import {
+  type ComposeMode,
+  type DocumentKind,
+  type DocumentMetadata,
+} from "./types";
 
 const PACKAGE_ID = import.meta.env.VITE_SUISIGN_PACKAGE_ID as string;
 
@@ -28,6 +33,8 @@ type CreateComposeInput = {
   signAndExecute: SignAndExecuteFn;
 
   file?: File | null;
+  mode: ComposeMode;
+  requiresHandSignature?: boolean;
 };
 
 // --- helper: fetch tx details from a fullnode using the digest --- //
@@ -245,8 +252,13 @@ export async function createDocumentFromCompose(
   let contentKind: "message" | "file" = "message";
   let fileName: string | undefined;
   let mimeType: string | undefined;
+  const docKind: DocumentKind = input.mode === "pdf" ? "pdf" : "richtext";
 
-  if (input.file) {
+  if (input.mode === "pdf") {
+    if (!input.file) {
+      throw new Error("PDF mode requires an uploaded file.");
+    }
+
     contentKind = "file";
     const encFile = await encryptFileToWalrus(input.file);
     encrypted = encFile;
@@ -304,6 +316,13 @@ export async function createDocumentFromCompose(
     );
   }
 
+  const metadata: DocumentMetadata = {
+    kind: docKind,
+    subject: input.subject,
+    walrusBlobId: encrypted.blobId,
+    requiresHandSignature: Boolean(input.requiresHandSignature),
+  };
+
   if (!createdObjectId) {
     console.warn(
       "[SuiSign] Could not find created Document objectId; " +
@@ -337,5 +356,7 @@ export async function createDocumentFromCompose(
     contentKind,
     fileName: fileName ?? "",
     mimeType: mimeType ?? "",
+    requiresHandSignature: Boolean(input.requiresHandSignature),
+    metadata,
   };
 }

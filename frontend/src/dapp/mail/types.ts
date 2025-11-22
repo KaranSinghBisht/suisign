@@ -2,6 +2,21 @@ export type DocStatus = "pending" | "signed" | "completed" | "rejected";
 
 export type ContentKind = "message" | "file";
 
+export type DocumentKind = "richtext" | "pdf";
+
+export type ComposeMode = DocumentKind;
+
+export interface DocumentMetadata {
+  kind: DocumentKind;
+  subject: string;
+  walrusBlobId: string;
+  requiresHandSignature?: boolean;
+  localSignatures?: {
+    party: "sender" | "recipient";
+    dataUrl: string; // base64 PNG of drawn sig
+  }[];
+}
+
 export interface UiDocument {
   id: string;
   subject: string;
@@ -29,6 +44,7 @@ export interface UiDocument {
   contentKind?: ContentKind;   // "message" (default) or "file"
   fileName?: string | null;
   mimeType?: string | null;
+  metadata?: DocumentMetadata;
 }
 
 export enum FolderType {

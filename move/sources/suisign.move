@@ -25,7 +25,11 @@ module suisign::document {
         fully_signed: bool,
     }
 
-    /// Create a new document and share it so that other signers can call `sign_document`.
+    const E_NOT_SIGNER: u64 = 1;
+    const E_ALREADY_SIGNED: u64 = 2;
+    const E_NOT_OWNER: u64 = 3;
+
+    // existing create_document, sign_document, seal_approve...
     public entry fun create_document(
         walrus_blob_id: string::String,
         walrus_hash_hex: string::String,
@@ -46,15 +50,9 @@ module suisign::document {
             fully_signed: false,
         };
 
-        // Make the Document a shared object so all signers can call `sign_document`.
         transfer::share_object(doc);
     }
 
-    /// Sign an existing shared document.
-    ///
-    /// Requirements:
-    ///  - caller must be in `signers`
-    ///  - caller must not have signed before
     public entry fun sign_document(
         doc: &mut Document,
         clock: &clock::Clock,
@@ -62,11 +60,8 @@ module suisign::document {
     ) {
         let signer = tx_context::sender(ctx);
 
-        // Error codes:
-        // 1 = not an allowed signer
-        // 2 = already signed
-        assert!(is_signer(&doc.signers, signer), 1);
-        assert!(!has_signed(&doc.signatures, signer), 2);
+        assert!(is_signer(&doc.signers, signer), E_NOT_SIGNER);
+        assert!(!has_signed(&doc.signatures, signer), E_ALREADY_SIGNED);
 
         let ts = clock::timestamp_ms(clock);
         let rec = SignatureRecord { signer, timestamp_ms: ts };
@@ -78,12 +73,29 @@ module suisign::document {
         };
     }
 
-    /// Seal access-control hook.
-    /// For now the function is a no-op; Seal only needs it to exist with this
-    /// name and signature to validate the PTB.
+    /// Seal access-control hook (no-op, used by Seal PTB validation).
     public entry fun seal_approve(_id: vector<u8>, _doc: &mut Document) {}
 
-    /// Check if an address is in the allowed signers list.
+    /// **NEW**: rotate the Walrus blob for this document.
+    ///
+    /// - Allowed callers: owner OR any signer on the document.
+    /// - Safe to call multiple times; it just overwrites the fields.
+    public entry fun update_document_blob(
+        doc: &mut Document,
+        new_walrus_blob_id: string::String,
+        new_walrus_hash_hex: string::String,
+        ctx: &mut tx_context::TxContext,
+    ) {
+        let sender = tx_context::sender(ctx);
+        assert!(
+            sender == doc.owner || is_signer(&doc.signers, sender),
+            E_NOT_OWNER
+        );
+
+        doc.walrus_blob_id = new_walrus_blob_id;
+        doc.walrus_hash_hex = new_walrus_hash_hex;
+    }
+
     fun is_signer(signers: &vector<address>, addr: address): bool {
         let mut i = 0;
         let len = vector::length(signers);
@@ -97,7 +109,6 @@ module suisign::document {
         false
     }
 
-    /// Check if an address has already signed.
     fun has_signed(sigs: &vector<SignatureRecord>, addr: address): bool {
         let mut i = 0;
         let len = vector::length(sigs);

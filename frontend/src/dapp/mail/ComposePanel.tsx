@@ -4,13 +4,12 @@ import React from "react";
 import { draftAgreementWithAI } from "../../ai/draftAgreement";
 import { RichTextEditor } from "../../components/RichTextEditor";
 import { stripHtml } from "../../utils/text";
+import { type ComposeMode } from "./types";
 import {
   MAIL_TEMPLATES,
   type TemplateId,
   type TemplateContext,
 } from "./templates";
-
-type ComposeMode = "message" | "file";
 
 interface ComposePanelProps {
   isOpen: boolean;
@@ -21,6 +20,7 @@ interface ComposePanelProps {
     signerInput: string;
     mode: ComposeMode;
     file?: File | null;
+    requiresHandSignature: boolean;
   }) => void | Promise<void>;
   /** Optional: label/handle of the connected wallet (e.g. kryptos.sui or 0x4a…89b2) */
   currentUserLabel?: string;
@@ -41,8 +41,10 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
   const [aiInstructions, setAiInstructions] = React.useState("");
   const [selectedTemplateId, setSelectedTemplateId] =
     React.useState<TemplateId | "">("");
-  const [mode, setMode] = React.useState<ComposeMode>("message");
-  const [file, setFile] = React.useState<File | null>(null);
+  const [mode, setMode] = React.useState<ComposeMode>("richtext");
+  const [pdfFile, setPdfFile] = React.useState<File | null>(null);
+  const [requiresHandSignature, setRequiresHandSignature] =
+    React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [isDrafting, setIsDrafting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -52,13 +54,14 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
       setSubject("");
       setSignerInput("");
       setMessage("");
-      setFile(null);
-      setMode("message");
+      setPdfFile(null);
+      setMode("richtext");
       setIsCreating(false);
       setIsDrafting(false);
       setAiInstructions("");
       setSelectedTemplateId("");
       setError(null);
+      setRequiresHandSignature(false);
     }
   }, [isOpen]);
 
@@ -67,14 +70,14 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
     if (!f) {
-      setFile(null);
+      setPdfFile(null);
       return;
     }
 
     if (f.type !== "application/pdf") {
       alert("Please upload a PDF file.");
       e.target.value = "";
-      setFile(null);
+      setPdfFile(null);
       return;
     }
 
@@ -82,15 +85,15 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
     if (f.size > maxBytes) {
       alert("PDF is too large. Please keep it under 5 MB.");
       e.target.value = "";
-      setFile(null);
+      setPdfFile(null);
       return;
     }
 
-    setFile(f);
+    setPdfFile(f);
   };
 
   const handleDraftWithAI = async () => {
-    if (isDrafting || mode !== "message") return;
+    if (isDrafting || mode !== "richtext") return;
 
     const trimmedSubject = subject.trim();
     const trimmedSigners = signerInput.trim();
@@ -146,12 +149,12 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
       return;
     }
 
-    if (mode === "message" && !trimmedPlainMessage) {
+    if (mode === "richtext" && !trimmedPlainMessage) {
       alert("Message body is required for a secure message.");
       return;
     }
 
-    if (mode === "file" && !file) {
+    if (mode === "pdf" && !pdfFile) {
       alert("Please choose a PDF to upload.");
       return;
     }
@@ -164,8 +167,9 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
         signerInput: trimmedSigners,
         mode,
         // store HTML so we keep bold/lists/etc
-        message: mode === "message" ? message : "",
-        file: mode === "file" ? file : null,
+        message: mode === "richtext" ? message : "",
+        file: mode === "pdf" ? pdfFile : null,
+        requiresHandSignature,
       });
     } catch (err: any) {
       console.error("[SuiSign] compose failed", err);
@@ -250,25 +254,25 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
         <div className="flex gap-2 mb-2">
           <button
             type="button"
-            onClick={() => setMode("message")}
+            onClick={() => setMode("richtext")}
             className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium border ${
-              mode === "message"
+              mode === "richtext"
                 ? "bg-blue-600 text-white border-blue-500"
                 : "bg-slate-900 text-slate-400 border-slate-700 hover:bg-slate-800"
             }`}
           >
-            Secure message
+            Text agreement
           </button>
           <button
             type="button"
-            onClick={() => setMode("file")}
+            onClick={() => setMode("pdf")}
             className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium border ${
-              mode === "file"
+              mode === "pdf"
                 ? "bg-blue-600 text-white border-blue-500"
                 : "bg-slate-900 text-slate-400 border-slate-700 hover:bg-slate-800"
             }`}
           >
-            Upload document (PDF)
+            Upload PDF
           </button>
         </div>
 
@@ -306,7 +310,7 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
             Seal).
           </p>
 
-          {mode === "message" && (
+          {mode === "richtext" && (
             <>
               <div className="space-y-1">
                 <label className="text-[11px] font-medium text-slate-300">
@@ -360,7 +364,7 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
         </div>
 
         {/* Mode-specific content */}
-        {mode === "message" ? (
+        {mode === "richtext" ? (
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-300">
               Message
@@ -372,25 +376,36 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
             />
           </div>
         ) : (
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-300">
-              Upload PDF document
-            </label>
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={handleFileChange}
-              className="block w-full text-xs text-slate-300 file:mr-3 file:px-3 file:py-1.5 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
-            />
-            <p className="text-[11px] text-slate-500">
-              We’ll encrypt the raw PDF bytes in your browser, store only the
-              ciphertext on Walrus, and gate decryption via Seal.
-            </p>
-            {file && (
-              <p className="text-[11px] text-slate-400">
-                Selected: <span className="font-mono">{file.name}</span>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-300">
+                Upload PDF document
+              </label>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={handleFileChange}
+                className="block w-full text-xs text-slate-300 file:mr-3 file:px-3 file:py-1.5 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
+              />
+              <p className="text-[11px] text-slate-500">
+                We’ll encrypt the raw PDF bytes in your browser, store only the
+                ciphertext on Walrus, and gate decryption via Seal.
               </p>
-            )}
+              {pdfFile && (
+                <p className="text-[11px] text-slate-400">
+                  Selected: <span className="font-mono">{pdfFile.name}</span>
+                </p>
+              )}
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-slate-300">
+              <input
+                type="checkbox"
+                checked={requiresHandSignature}
+                onChange={(e) => setRequiresHandSignature(e.target.checked)}
+              />
+              Require handwritten signature from all parties
+            </label>
           </div>
         )}
 
@@ -403,7 +418,7 @@ export const ComposePanel: React.FC<ComposePanelProps> = ({
           >
             Cancel
           </button>
-          {mode === "message" && (
+          {mode === "richtext" && (
             <button
               type="button"
               onClick={handleDraftWithAI}

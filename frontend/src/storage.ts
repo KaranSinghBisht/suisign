@@ -3,6 +3,7 @@
 
 import { walrusStoreBlob, walrusReadBlob } from "./walrusClient";
 import { toBase64, fromBase64 } from "./cryptoHelpers";
+import type { DocumentMetadata, DocumentKind } from "./dapp/mail/types";
 
 /* ---------- Walrus blob storage ---------- */
 
@@ -86,11 +87,13 @@ export type StoredDocMetadata = {
   status?: StoredDocStatus;
   signedAddresses?: string[];
   senderAddress?: string;
+  requiresHandSignature?: boolean;
 
   // Content metadata
   contentKind?: "message" | "file";
   fileName?: string;
   mimeType?: string;
+  metadata?: DocumentMetadata;
 };
 
 const DOCS_KEY_PREFIX = "suisign_docs_";
@@ -132,6 +135,21 @@ export function saveDocForAddress(
   const docKey =
     doc.blobId || doc.objectId || `local-${Date.now().toString(16)}`;
 
+  const derivedKind: DocumentKind =
+    doc.metadata?.kind ??
+    (doc.contentKind === "file" || doc.mimeType
+      ? "pdf"
+      : "richtext");
+
+  const normalizedMetadata: DocumentMetadata = {
+    kind: derivedKind,
+    subject: doc.metadata?.subject ?? doc.subject ?? "",
+    walrusBlobId: doc.metadata?.walrusBlobId ?? doc.blobId ?? "",
+    requiresHandSignature:
+      doc.metadata?.requiresHandSignature ?? doc.requiresHandSignature ?? false,
+    localSignatures: doc.metadata?.localSignatures,
+  };
+
   // remove any prior entry with same blobId/objectId
   const filtered = existing.filter(
     (d) => (d.blobId || d.objectId) !== docKey,
@@ -153,10 +171,15 @@ export function saveDocForAddress(
     status: doc.status ?? "pending",
     signedAddresses: doc.signedAddresses ?? [],
     senderAddress: doc.senderAddress ? doc.senderAddress.toLowerCase() : "",
+    requiresHandSignature:
+      doc.requiresHandSignature ??
+      doc.metadata?.requiresHandSignature ??
+      false,
 
     contentKind: doc.contentKind ?? (doc.mimeType ? "file" : "message"),
     fileName: doc.fileName ?? "",
     mimeType: doc.mimeType ?? "",
+    metadata: normalizedMetadata,
   };
 
   filtered.push(normalized);
@@ -233,5 +256,59 @@ export function updateDocSignedAddressesForAddress(
       LAST_CREATED_KEY,
       JSON.stringify({ ...last, signedAddresses }),
     );
+  }
+}
+
+export function updateDocBlobForAddress(
+  address: string,
+  docId: string,
+  newBlobId: string,
+  newHashHex?: string,
+): void {
+  if (!address || !docId) return;
+
+  const key = `${DOCS_KEY_PREFIX}${address}`;
+  const list = loadDocsForAddress(address);
+  if (!list.length) return;
+
+  const updated = list.map((d) => {
+    if (d.objectId === docId || d.blobId === docId) {
+      const updatedMeta: DocumentMetadata = {
+        ...(d.metadata ?? {
+          kind: "pdf",
+          subject: d.subject ?? "",
+          walrusBlobId: d.blobId,
+        }),
+        walrusBlobId: newBlobId,
+      };
+
+      return {
+        ...d,
+        blobId: newBlobId,
+        hashHex: newHashHex ?? d.hashHex,
+        metadata: updatedMeta,
+      };
+    }
+    return d;
+  });
+
+  localStorage.setItem(key, JSON.stringify(updated));
+
+  const last = loadLastCreatedDoc();
+  if (last && (last.objectId === docId || last.blobId === docId)) {
+    const updatedLast: StoredDocMetadata = {
+      ...last,
+      blobId: newBlobId,
+      hashHex: newHashHex ?? last.hashHex,
+      metadata: {
+        ...(last.metadata ?? {
+          kind: "pdf",
+          subject: last.subject ?? "",
+          walrusBlobId: last.blobId,
+        }),
+        walrusBlobId: newBlobId,
+      },
+    };
+    localStorage.setItem(LAST_CREATED_KEY, JSON.stringify(updatedLast));
   }
 }

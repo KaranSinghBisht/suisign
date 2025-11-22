@@ -130,7 +130,7 @@ export const Hero: React.FC = () => {
                   <div className="w-3 h-3 rounded-full bg-green-500/50" />
                 </div>
                 <div className="ml-auto px-3 py-1 rounded-full bg-black/30 text-[10px] text-slate-500 font-mono border border-white/5">
-                  https://app.suisign.xyz/dashboard
+                  https://suisign-app.vercel.app/dashboard
                 </div>
               </div>
 

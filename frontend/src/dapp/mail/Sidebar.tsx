@@ -2,6 +2,7 @@ import React from "react";
 import { FolderType } from "./types";
 import { Inbox, Send, PenTool } from "lucide-react";
 import { getHandleForAddress } from "../../handleRegistry";
+import Logo from "../../assets/Logo.png";
 
 interface SidebarProps {
   currentFolder: FolderType;
@@ -31,9 +32,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <div className="flex flex-col h-full p-4 bg-background border-r border-slate-800">
       {/* Logo Area */}
       <div className="flex items-center gap-2 px-2 mb-8 pt-2">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white font-bold font-display text-xl shadow-lg shadow-blue-500/20">
-          S
-        </div>
+        <img
+          src={Logo}
+          alt="SuiSign logo"
+          className="w-8 h-8 rounded-lg object-contain shadow-lg shadow-blue-500/20"
+        />
         <span className="text-xl font-bold font-display tracking-tight text-white">
           SuiSign
         </span>

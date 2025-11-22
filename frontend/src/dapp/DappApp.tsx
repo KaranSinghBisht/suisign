@@ -7,6 +7,7 @@ import {
 } from "@mysten/dapp-kit";
 import { MailDashboard } from "./mail/MailDashboard";
 import { resetSealSessionForAddress } from "../sealClient";
+import Logo from "../assets/Logo.png";
 
 function truncateAddress(addr: string, n = 4) {
   if (!addr) return "";
@@ -29,9 +30,11 @@ export default function DappApp() {
       {/* Top app bar */}
       <header className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-background/80 backdrop-blur z-20">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white font-display font-bold text-lg">
-            S
-          </div>
+          <img
+            src={Logo}
+            alt="SuiSign logo"
+            className="w-8 h-8 rounded-lg object-contain"
+          />
           <div className="flex flex-col">
             <span className="font-display font-bold tracking-tight text-white">
               SuiSign

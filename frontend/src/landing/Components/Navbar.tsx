@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
-import { Menu, X } from 'lucide-react';
-import { ShinyButton } from './ShinyButton';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from "react";
+import { motion, useScroll, useMotionValueEvent } from "framer-motion";
+import { Menu, X } from "lucide-react";
+import { ShinyButton } from "./ShinyButton";
+import { useNavigate } from "react-router-dom";
+import Logo from "../../assets/Logo.png";
 
 export const Navbar: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -15,18 +16,18 @@ export const Navbar: React.FC = () => {
   });
 
   const navLinks = [
-    { name: 'How it works', href: '#how-it-works' },
-    { name: 'Features', href: '#features' },
-    { name: 'For Teams', href: '#teams' },
-    { name: 'Security', href: '#security' },
+    { name: "How it works", href: "#how-it-works" },
+    { name: "Features", href: "#features" },
+    { name: "For Teams", href: "#teams" },
+    { name: "Security", href: "#security" },
   ];
 
   return (
     <motion.nav
       className={`fixed top-0 left-0 right-0 z-40 transition-all duration-500 border-b ${
-        isScrolled 
-          ? 'bg-background/70 backdrop-blur-xl border-white/5 py-4 shadow-lg' 
-          : 'bg-transparent border-transparent py-6'
+        isScrolled
+          ? "bg-background/70 backdrop-blur-xl border-white/5 py-4 shadow-lg"
+          : "bg-transparent border-transparent py-6"
       }`}
       initial={{ y: -100 }}
       animate={{ y: 0 }}
@@ -35,9 +36,11 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
         {/* Logo */}
         <a href="#" className="flex items-center gap-2 group">
-          <div className="w-9 h-9 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center text-white font-bold font-display text-lg group-hover:shadow-[0_0_20px_rgba(56,189,248,0.5)] transition-all duration-300 group-hover:scale-105">
-            S
-          </div>
+          <img
+            src={Logo}
+            alt="SuiSign logo"
+            className="w-9 h-9 rounded-xl object-contain group-hover:shadow-[0_0_20px_rgba(56,189,248,0.5)] transition-all duration-300 group-hover:scale-105"
+          />
           <span className="text-xl font-display font-bold tracking-tight text-white">
             Sui<span className="text-accent">Sign</span>
           </span>
@@ -60,10 +63,16 @@ export const Navbar: React.FC = () => {
         {/* CTA & Mobile Toggle */}
         <div className="flex items-center gap-4">
           <div className="hidden md:block">
-             <ShinyButton type="button" onClick={() => navigate("/app")} className="!px-6 !py-2 !text-sm">Launch App</ShinyButton>
+            <ShinyButton
+              type="button"
+              onClick={() => navigate("/app")}
+              className="!px-6 !py-2 !text-sm"
+            >
+              Launch App
+            </ShinyButton>
           </div>
-          
-          <button 
+
+          <button
             className="md:hidden text-slate-300 hover:text-white"
             onClick={() => setIsMobileOpen(!isMobileOpen)}
           >

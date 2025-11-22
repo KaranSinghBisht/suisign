@@ -63,9 +63,11 @@ export const Hero: React.FC = () => {
             
             <h1 className="text-5xl lg:text-7xl font-display font-bold leading-[1.1] mb-8">
               <TextReveal text="Sign serious agreements," />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-300 to-teal-300 drop-shadow-lg">
-                <TextReveal text="on-chain." delay={0.5} />
-              </span>
+              <TextReveal
+                text="on-chain."
+                delay={0.5}
+                wordClassName="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-300 to-teal-300 drop-shadow-lg"
+              />
             </h1>
             
             <p className="text-lg text-slate-400 mb-10 max-w-xl leading-relaxed">

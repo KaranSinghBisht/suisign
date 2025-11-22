@@ -5,9 +5,15 @@ interface TextRevealProps {
   text: string;
   className?: string;
   delay?: number;
+  wordClassName?: string;
 }
 
-export const TextReveal: React.FC<TextRevealProps> = ({ text, className = "", delay = 0 }) => {
+export const TextReveal: React.FC<TextRevealProps> = ({
+  text,
+  className = "",
+  delay = 0,
+  wordClassName = "",
+}) => {
   const words = text.split(" ");
 
   const container: Variants = {
@@ -49,7 +55,12 @@ export const TextReveal: React.FC<TextRevealProps> = ({ text, className = "", de
       className={className}
     >
       {words.map((word, index) => (
-        <motion.span variants={child} style={{ marginRight: "0.25em" }} key={index}>
+        <motion.span
+          variants={child}
+          style={{ marginRight: "0.25em" }}
+          className={wordClassName}
+          key={index}
+        >
           {word}
         </motion.span>
       ))}

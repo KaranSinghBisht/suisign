@@ -221,7 +221,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
       }
 
       if (doc.walrusBlobId && doc.sealSecretId) {
-        return "🔐 This is an encrypted document. Click “Decrypt document” above to view and download the original file.";
+        return "This is an encrypted document. Click “Decrypt document” above to view and download the original file.";
       }
 
       return "Content not available for this document.";
@@ -236,7 +236,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
     }
 
     if (doc.walrusBlobId && doc.sealSecretId) {
-      return "🔐 This message is encrypted. Click “Decrypt message” above to view the contents.";
+      return "This message is encrypted. Click “Decrypt message” above to view the contents.";
     }
 
     return "Content not available for this document.";
@@ -315,15 +315,15 @@ export const ReadingPane: React.FC<ReadingPaneProps> = ({
                 {isFileDoc
                   ? decryptedFileUrl
                     ? doc.fileName
-                      ? `🔓 Decrypted document: ${doc.fileName}`
-                      : "🔓 Decrypted document ready to view."
+                      ? `Decrypted document: ${doc.fileName}`
+                      : "Decrypted document ready to view."
                     : doc.fileName
-                      ? `🔐 Encrypted document: ${doc.fileName}`
-                      : "🔐 Encrypted document. Decrypt to download the original file."
+                      ? `Encrypted document: ${doc.fileName}`
+                      : "Encrypted document. Decrypt to download the original file."
                   : decryptedBody
                     ? stripHtml(decryptedBody).slice(0, 160)
                     : doc.walrusBlobId && doc.sealSecretId
-                      ? "🔐 Encrypted message body. Decrypt to view."
+                      ? "Encrypted message body. Decrypt to view."
                       : doc.messagePreview}
               </p>
               {doc.walrusBlobId && doc.sealSecretId && (

@@ -27,8 +27,8 @@ const SUISIGN_PACKAGE_ID = import.meta.env
   .VITE_SUISIGN_PACKAGE_ID as string;
 
 // Not used yet, but keep for future on-chain decrypt.
-const SEAL_PACKAGE_ID = import.meta.env
-  .VITE_SEAL_PACKAGE_ID as string | undefined;
+// const SEAL_PACKAGE_ID = import.meta.env
+//   .VITE_SEAL_PACKAGE_ID as string | undefined;
 
 // Comma-separated Seal key server object IDs (0x... addresses)
 const SEAL_SERVER_IDS: string[] = (import.meta.env.VITE_SEAL_SERVER_IDS || "")

@@ -7,7 +7,6 @@ import {
   ExternalLink,
   ShieldCheck,
   FileCheck,
-  XCircle,
   PenTool,
 } from "lucide-react";
 import { readSealSecretForDoc, SEAL_ENOACCESS } from "../../sealClient";
